@@ -29,6 +29,7 @@ public static class SnapshotRenderer
         return brush;
     }
 
+    /// <param name="target">Where the canvas lands, which is not necessarily where the capture does.</param>
     /// <param name="suppress">
     /// An annotation to leave undrawn. Used while text is being typed in place, where the editor
     /// itself is showing the words: drawing them underneath as well would double every stroke.
@@ -39,7 +40,16 @@ public static class SnapshotRenderer
         var canvas = snapshot.Document.Canvas;
         var scale = canvas.Width == 0 ? 1 : target.Width / canvas.Width;
 
-        context.DrawImage(snapshot.Bitmap, target);
+        // Everything drawn on a snapshot is positioned against the capture's top-left corner rather
+        // than the canvas's, so that cropping the canvas in or pushing it out moves nothing that was
+        // drawn on it. This is where that corner falls on the target.
+        var origin = Origin(canvas, target, scale);
+
+        // The capture at its own size, wherever the canvas sits around it. Whatever the canvas
+        // covers beyond the capture is simply not painted, which is what makes it transparent.
+        context.DrawImage(snapshot.Bitmap, new Rect(origin, new Size(
+            snapshot.Bitmap.PixelSize.Width * scale,
+            snapshot.Bitmap.PixelSize.Height * scale)));
 
         // In the order they are in. What is on top is the user's to decide, which is why every
         // annotation can be moved forward and back; a rule that always put one kind underneath
@@ -54,52 +64,52 @@ public static class SnapshotRenderer
             switch (annotation)
             {
                 case BlurAnnotation blur:
-                    DrawBlur(context, blurs, blur, target, scale);
+                    DrawBlur(context, blurs, blur, origin, scale);
                     break;
 
                 case BoxAnnotation box:
-                    DrawBox(context, box, target, scale);
+                    DrawBox(context, box, origin, scale);
                     break;
 
                 case ArrowAnnotation arrow:
-                    DrawArrow(context, arrow, target, scale);
+                    DrawArrow(context, arrow, origin, scale);
                     break;
 
                 case StepAnnotation step:
-                    DrawStep(context, step, target, scale);
+                    DrawStep(context, step, origin, scale);
                     break;
 
                 case TextAnnotation text:
-                    DrawText(context, text, target, scale);
+                    DrawText(context, text, origin, scale);
                     break;
             }
         }
     }
 
     /// <summary>Text, on its plate when it has one.</summary>
-    static void DrawText(DrawingContext context, TextAnnotation text, Rect target, double scale)
+    static void DrawText(DrawingContext context, TextAnnotation text, Point origin, double scale)
     {
         var formatted = Format(text, scale);
-        var origin = new Point(target.X + text.X * scale, target.Y + text.Y * scale);
+        var at = new Point(origin.X + text.X * scale, origin.Y + text.Y * scale);
 
         if (text.HasBackground)
         {
             var padding = text.BackgroundPadding * scale;
 
             context.FillRectangle(BrushFor(text.Background), new Rect(
-                origin.X - padding,
-                origin.Y - padding,
+                at.X - padding,
+                at.Y - padding,
                 formatted.Width + 2 * padding,
                 formatted.Height + 2 * padding));
         }
 
-        context.DrawText(formatted, origin);
+        context.DrawText(formatted, at);
     }
 
     /// <summary>A numbered marker: a filled disc with its number centred in it.</summary>
-    static void DrawStep(DrawingContext context, StepAnnotation step, Rect target, double scale)
+    static void DrawStep(DrawingContext context, StepAnnotation step, Point origin, double scale)
     {
-        var centre = new Point(target.X + step.X * scale, target.Y + step.Y * scale);
+        var centre = new Point(origin.X + step.X * scale, origin.Y + step.Y * scale);
         var radius = Math.Max(step.Radius * scale, 1);
         var fill = ParseColor(step.Color);
 
@@ -122,11 +132,11 @@ public static class SnapshotRenderer
     public static Color Legible(Color on) =>
         (0.299 * on.R + 0.587 * on.G + 0.114 * on.B) / 255 > 0.6 ? Color.FromRgb(0x1D, 0x1F, 0x20) : Colors.White;
 
-    static void DrawBox(DrawingContext context, BoxAnnotation box, Rect target, double scale)
+    static void DrawBox(DrawingContext context, BoxAnnotation box, Point origin, double scale)
     {
         var rect = new Rect(
-            target.X + box.X * scale,
-            target.Y + box.Y * scale,
+            origin.X + box.X * scale,
+            origin.Y + box.Y * scale,
             Math.Max(box.Width * scale, 1),
             Math.Max(box.Height * scale, 1));
 
@@ -146,13 +156,13 @@ public static class SnapshotRenderer
         Math.Max(text.FontSize * scale, 1),
         BrushFor(text.Color));
 
-    static void DrawBlur(DrawingContext context, BlurCache blurs, BlurAnnotation blur, Rect target, double scale)
+    static void DrawBlur(DrawingContext context, BlurCache blurs, BlurAnnotation blur, Point origin, double scale)
     {
         var source = new Rect(blur.X, blur.Y, Math.Max(blur.Width, 1), Math.Max(blur.Height, 1));
 
         var destination = new Rect(
-            target.X + blur.X * scale,
-            target.Y + blur.Y * scale,
+            origin.X + blur.X * scale,
+            origin.Y + blur.Y * scale,
             Math.Max(blur.Width * scale, 1),
             Math.Max(blur.Height * scale, 1));
 
@@ -164,10 +174,10 @@ public static class SnapshotRenderer
         context.DrawImage(blurs.For(blur.Strength), source, destination);
     }
 
-    static void DrawArrow(DrawingContext context, ArrowAnnotation arrow, Rect target, double scale)
+    static void DrawArrow(DrawingContext context, ArrowAnnotation arrow, Point origin, double scale)
     {
-        var from = new Point(target.X + arrow.X1 * scale, target.Y + arrow.Y1 * scale);
-        var to = new Point(target.X + arrow.X2 * scale, target.Y + arrow.Y2 * scale);
+        var from = new Point(origin.X + arrow.X1 * scale, origin.Y + arrow.Y1 * scale);
+        var to = new Point(origin.X + arrow.X2 * scale, origin.Y + arrow.Y2 * scale);
 
         var span = to - from;
         var length = Math.Sqrt(span.X * span.X + span.Y * span.Y);
@@ -217,6 +227,15 @@ public static class SnapshotRenderer
 
         context.DrawGeometry(brush, null, head);
     }
+
+    /// <summary>
+    /// Where the capture's top-left corner falls, given where the canvas has been put.
+    ///
+    /// Shared with the editing canvas, which has to map a pointer back the other way and must agree
+    /// with this to the pixel or every click lands somewhere else than it looks.
+    /// </summary>
+    public static Point Origin(CanvasArea canvas, Rect target, double scale) =>
+        new(target.X - canvas.X * scale, target.Y - canvas.Y * scale);
 
     public static Color ParseColor(string value)
         => Color.TryParse(value, out var color) ? color : Colors.Red;

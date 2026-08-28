@@ -44,6 +44,9 @@ public sealed class ToolBand : Border
     readonly Segmented head;
     readonly Segmented fill;
 
+    readonly TextBox canvasWidth;
+    readonly TextBox canvasHeight;
+
     readonly Control colourGroup;
     readonly Control fillColourGroup;
     readonly Control textBackGroup;
@@ -55,6 +58,9 @@ public sealed class ToolBand : Border
     readonly Control fillGroup;
     readonly Control blurGroup;
     readonly Control textSizeGroup;
+    readonly Control canvasWidthGroup;
+    readonly Control canvasHeightGroup;
+    readonly Control canvasFitGroup;
 
     readonly TextBlock zoomLabel;
 
@@ -100,6 +106,15 @@ public sealed class ToolBand : Border
         stepNumberGroup = Group("Number", stepNumber);
         stepSizeGroup = Group("Size", stepSize);
 
+        Control widthBox;
+        Control heightBox;
+        (widthBox, canvasWidth) = SizeBox(value => CanvasWidthChosen?.Invoke(value));
+        (heightBox, canvasHeight) = SizeBox(value => CanvasHeightChosen?.Invoke(value));
+
+        canvasWidthGroup = Group("Width", widthBox);
+        canvasHeightGroup = Group("Height", heightBox);
+        canvasFitGroup = Group("Canvas", TextAction("Fit to capture", () => CanvasFitRequested?.Invoke()));
+
         zoomLabel = Labels.Body("100%", 12.5, Tokens.Neutral600Brush);
 
         var left = new StackPanel
@@ -124,7 +139,8 @@ public sealed class ToolBand : Border
         foreach (var group in new[]
                  {
                      colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
-                     headGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup
+                     headGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
+                     canvasWidthGroup, canvasHeightGroup, canvasFitGroup
                  })
         {
             settings.Children.Add(group);
@@ -166,6 +182,9 @@ public sealed class ToolBand : Border
     public event Action<string>? TextBackColourChosen;
     public event Action<int>? StepNumberChosen;
     public event Action<double>? StepSizeChosen;
+    public event Action<int>? CanvasWidthChosen;
+    public event Action<int>? CanvasHeightChosen;
+    public event Action? CanvasFitRequested;
     public event Action? UndoRequested;
     public event Action? RedoRequested;
 
@@ -180,7 +199,8 @@ public sealed class ToolBand : Border
                      (EditorTool.Box, Lucide.Box, "Box  (B)"),
                      (EditorTool.Blur, Lucide.Blur, "Blur  (L)"),
                      (EditorTool.Step, Lucide.Step, "Numbered marker  (N)\nEach one takes the next number up."),
-                     (EditorTool.Text, Lucide.Text, "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish.")
+                     (EditorTool.Text, Lucide.Text, "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
+                     (EditorTool.Canvas, Lucide.Crop, "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.")
                  })
         {
             var icon = Lucide.Icon(glyph, 17, Tokens.Neutral800Brush);
@@ -262,7 +282,85 @@ public sealed class ToolBand : Border
         return cell;
     }
 
+    /// <summary>
+    /// A number typed in full, framed like the band's other fields.
+    ///
+    /// Not a <see cref="NumberField"/>, which leads with presets. A canvas has no sizes worth
+    /// offering as presets: the useful widths are whatever this particular picture needs, and a
+    /// scale of four suggested numbers would be four wrong answers. It is committed on Enter or on
+    /// leaving the field, since a canvas resized on every keystroke would resize to 1, then 19,
+    /// then 192 on the way to typing 1920.
+    /// </summary>
+    static (Control Frame, TextBox Box) SizeBox(Action<int> chosen)
+    {
+        var box = new TextBox
+        {
+            Theme = TextFields.Bare,
+            FontFamily = Tokens.Fonts.Body,
+            FontSize = 12.5,
+            Foreground = Tokens.Neutral800Brush,
+            CaretBrush = Tokens.Neutral800Brush,
+            SelectionBrush = Tokens.Accent300Brush,
+            SelectionForegroundBrush = Tokens.Neutral900Brush,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Width = 46
+        };
+
+        void Commit()
+        {
+            if (int.TryParse(box.Text, out var typed))
+            {
+                chosen(typed);
+            }
+        }
+
+        box.LostFocus += (_, _) => Commit();
+
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                Commit();
+            }
+        };
+
+        var frame = new Border
+        {
+            Child = box,
+            Height = 28,
+            Padding = new Thickness(Tokens.Space.S2, 0),
+            Background = Tokens.BgBrush,
+            BorderBrush = Tokens.DividerBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = Tokens.Radius,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        return (frame, box);
+    }
+
     public void ShowZoom(double scale) => zoomLabel.Text = $"{scale * 100:F0}%";
+
+    /// <summary>
+    /// Points the size fields at the canvas as it now is.
+    ///
+    /// A field being typed in is left alone. The canvas changes on every step of a drag and on
+    /// every commit, and rewriting the box under the caret would fight whoever is using it.
+    /// </summary>
+    public void ShowCanvasSize(int width, int height)
+    {
+        if (!canvasWidth.IsFocused)
+        {
+            canvasWidth.Text = width.ToString();
+        }
+
+        if (!canvasHeight.IsFocused)
+        {
+            canvasHeight.Text = height.ToString();
+        }
+    }
 
     /// <summary>
     /// Points the band at a tool and, when something is selected, at that object's own values.
@@ -306,6 +404,9 @@ public sealed class ToolBand : Border
         textBackGroup.IsVisible = kind is EditorTool.Text;
         stepNumberGroup.IsVisible = kind is EditorTool.Step;
         stepSizeGroup.IsVisible = kind is EditorTool.Step;
+        canvasWidthGroup.IsVisible = kind is EditorTool.Canvas;
+        canvasHeightGroup.IsVisible = kind is EditorTool.Canvas;
+        canvasFitGroup.IsVisible = kind is EditorTool.Canvas;
 
         // A fill colour only means anything when there is a fill to colour.
         var filled = selected is BoxAnnotation box ? box.HasFill : defaults.BoxFilled;

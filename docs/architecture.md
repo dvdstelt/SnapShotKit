@@ -69,12 +69,14 @@ A `.ssk` file, for SnapShotKit snapshot, is a zip container in the manner of ODF
 
 ```
 snapshot-01.ssk  (zip)
-├── document.json     canvas size and annotation objects, each with its own geometry
+├── document.json     the canvas rectangle and the annotation objects, each with its own geometry
 ├── original.png      the capture as taken, never modified
 └── meta.json         when it was taken, the source screen size, the region within it
 ```
 
 The point of the format is that editing stays non-destructive. `original.png` is never touched, and every arrow, callout or blur is an object with coordinates rather than pixels burned into the image, so anything drawn today can be moved or deleted next week. Exporting to PNG or JPEG renders the document rather than being the document.
+
+The canvas is recorded as a rectangle rather than a size, because it is not obliged to match the capture: it carries an offset saying where its top-left corner sits relative to the capture's. A document written before that existed has no offset, and zero is exactly what it meant.
 
 Snapshots are numbered, `snapshot-01.ssk` upwards, because they are working documents a person refers to by name. Straight captures that skip the editor are timestamped instead, since nobody refers to those by number.
 
@@ -113,6 +115,16 @@ A numbered marker is a disc with a number in it, and the number is an ordinary f
 Text can sit on a plate. No single ink colour is legible over a photograph or a gradient, so a background is the only thing that reliably makes text usable on a screenshot.
 
 Annotations that are defined by a rectangle share a `RectAnnotation` base, so the canvas moves and resizes a blur or a box without knowing which it has. Ellipse, highlight and step numbers would all fit the same way.
+
+## Resizing the canvas
+
+The canvas is the rectangle that gets exported, and it does not have to match the capture. Dragging an edge in crops the picture, and dragging one out adds space that is transparent. Neither touches `original.png`: a crop is geometry, so an edge pulled in can be pulled back out and the pixels are still there, which is the same promise the annotations get.
+
+Coordinates stay measured from the capture rather than from the canvas. That is what makes resizing cheap: every annotation is positioned against the picture it was drawn on, so moving the canvas moves nothing else, and cropping never rewrites a document to say where everything is now. Annotations that fall outside the canvas are clipped rather than deleted, on the editing canvas exactly as in the export.
+
+While an edge is being dragged the picture is held still: the scale is frozen and the canvas is placed by hand instead of centred on its mat. A canvas that refits as it grows moves the picture out from under the pointer that is sizing it, and the drag then chases its own tail. It goes back to being centred, and to fitting, when the edge is let go. For the same reason the canvas tool keeps a margin of the space available back rather than fitting exactly: an edge flush against the room available has nowhere to be dragged out to.
+
+Transparency is drawn as a chequerboard on the editing canvas and as nothing at all in an export, which is the same split as a blurred region's hairline edge. The affordance belongs to editing; the picture is the picture. JPEG has no alpha, so what would have been transparent is filled with white on the way out rather than arriving black.
 
 Blur strength is stored 1 to 100 and squared into a gaussian sigma, not stored as sigma. Sigma is only interesting between roughly 0.5 and 8, so a linear slider spends its bottom on invisible changes and its top on a region that is already flat grey. Squaring puts fine control where small differences are visible and still reaches a full redaction at the end.
 

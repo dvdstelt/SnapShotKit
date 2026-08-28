@@ -14,7 +14,10 @@ public enum EditorTool
     Box,
     Blur,
     Text,
-    Step
+    Step,
+
+    /// <summary>Resizes the canvas rather than anything drawn on it.</summary>
+    Canvas
 }
 
 enum DragKind
@@ -94,6 +97,18 @@ public sealed class CanvasView : Decorator
     static readonly IBrush HandleFill = SnapShotKit.Ui.Tokens.BgBrush;
     static readonly IPen HandleBorder = new Pen(SnapShotKit.Ui.Tokens.Accent700Brush, 1);
 
+    /// <summary>One square of the chequerboard, in view pixels. Chrome, so it does not scale with the picture.</summary>
+    const double ChequerCell = 8;
+
+    /// <summary>
+    /// The chequerboard that shows through wherever the canvas covers no capture.
+    ///
+    /// A tiled brush rather than a loop of squares: the control draws all of itself whatever is on
+    /// screen, so at 200% on a wide capture a loop would be hundreds of thousands of rectangles on
+    /// every repaint, for a pattern that means "nothing here".
+    /// </summary>
+    static readonly IBrush Chequerboard = BuildChequerboard();
+
     const double HandleSize = 8;
     const double HandleReach = 8;
 
@@ -132,6 +147,26 @@ public sealed class CanvasView : Decorator
     /// </summary>
     bool undoPending;
 
+    /// <summary>
+    /// Which edge of the canvas is being dragged, or None.
+    ///
+    /// Kept apart from <see cref="dragging"/> rather than folded into it. The canvas and an
+    /// annotation are never resized at the same time, and they behave differently at the limit: a
+    /// rectangle dragged through itself flips, while a canvas dragged through itself stops.
+    /// </summary>
+    DragKind canvasGrip;
+
+    /// <summary>The canvas as it was when the drag began, in image pixels.</summary>
+    Rect canvasBaseline;
+
+    /// <summary>
+    /// The scale held still for the duration of a canvas drag, or zero when there is none.
+    ///
+    /// A fitted canvas that refits as it grows shrinks the picture under the pointer that is
+    /// sizing it, and the drag then chases its own tail.
+    /// </summary>
+    double pinnedScale;
+
     public CanvasView(Snapshot snapshot, BlurCache blurs)
     {
         this.snapshot = snapshot;
@@ -142,7 +177,27 @@ public sealed class CanvasView : Decorator
         Child = editingLayer;
     }
 
-    public EditorTool Tool { get; set; } = EditorTool.Select;
+    /// <summary>
+    /// The active tool.
+    ///
+    /// Changing it remeasures, because the canvas tool asks for room around the picture to drag an
+    /// edge out into, which fitting has to allow for.
+    /// </summary>
+    public EditorTool Tool
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+
+            field = value;
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
+    } = EditorTool.Select;
 
     public Annotation? Selected { get; private set; }
 
@@ -157,6 +212,26 @@ public sealed class CanvasView : Decorator
     public event Action? Abandoned;
 
     public event Action? Changed;
+
+    /// <summary>Raised when a canvas drag begins, so the window can hold the picture still while it lasts.</summary>
+    public event Action? CanvasResizeStarted;
+
+    /// <summary>How far the canvas's top-left corner has moved since the drag began, in view pixels.</summary>
+    public event Action<Vector>? CanvasResizeMoved;
+
+    public event Action? CanvasResizeEnded;
+
+    /// <summary>
+    /// The canvas rectangle changed from outside, through the band or a menu.
+    ///
+    /// It decides the control's own size as well as what is drawn in it, so both have to be worked
+    /// out again; a repaint on its own would draw the new canvas at the old size.
+    /// </summary>
+    public void CanvasResized()
+    {
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
 
     public void Select(Annotation? annotation)
     {
@@ -225,7 +300,12 @@ public sealed class CanvasView : Decorator
 
         double scale;
 
-        if (Zoom is { } requested)
+        if (pinnedScale > 0)
+        {
+            // Held still for the length of a canvas drag. See the field.
+            scale = pinnedScale;
+        }
+        else if (Zoom is { } requested)
         {
             scale = Math.Clamp(requested, 0.05, MaxZoom);
         }
@@ -239,6 +319,15 @@ public sealed class CanvasView : Decorator
             // Fitting never enlarges. A small capture blown up to fill the window is a wall of fat
             // pixels, and the honest thing is to show it at its own size with the mat around it.
             scale = double.IsFinite(room) ? Math.Min(room, 1) : 1;
+
+            // The canvas tool needs somewhere to drag an edge out to. A canvas fitted exactly sits
+            // flush against the room available, where growing it is a drag into nothing, so this
+            // mode keeps a margin back, though only when the picture is filling the space, since
+            // otherwise there is already room to spare.
+            if (Tool == EditorTool.Canvas && double.IsFinite(room))
+            {
+                scale = Math.Min(scale, room * CanvasToolSlack);
+            }
         }
 
         if (Math.Abs(scale - EffectiveScale) > 0.0001)
@@ -263,23 +352,40 @@ public sealed class CanvasView : Decorator
         return finalSize;
     }
 
-    // The canvas is exactly the picture, so the picture is all of it.
+    // The control is exactly the canvas, so the canvas is all of it. The capture may sit anywhere
+    // within that, or hang off any side of it.
     Rect Target() => new(0, 0, Bounds.Width, Bounds.Height);
 
     double Scale => snapshot.Document.Canvas.Width == 0 ? 1 : Bounds.Width / snapshot.Document.Canvas.Width;
 
+    /// <summary>The canvas in image pixels, which is what a canvas drag works on.</summary>
+    Rect CanvasRect()
+    {
+        var canvas = snapshot.Document.Canvas;
+        return new Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height);
+    }
+
+    /// <summary>
+    /// Where the capture's top-left corner falls on the control.
+    ///
+    /// Image coordinates are measured from the capture rather than from the canvas, so this is the
+    /// zero of everything drawn on the picture. Taken from the renderer so the two cannot disagree:
+    /// if they did, every click would land somewhere other than where it looks.
+    /// </summary>
+    Point Origin() => SnapshotRenderer.Origin(snapshot.Document.Canvas, Target(), Scale);
+
     Point ToImage(Point view)
     {
-        var target = Target();
+        var origin = Origin();
         var scale = Scale;
-        return new Point((view.X - target.X) / scale, (view.Y - target.Y) / scale);
+        return new Point((view.X - origin.X) / scale, (view.Y - origin.Y) / scale);
     }
 
     Point ToView(double x, double y)
     {
-        var target = Target();
+        var origin = Origin();
         var scale = Scale;
-        return new Point(target.X + x * scale, target.Y + y * scale);
+        return new Point(origin.X + x * scale, origin.Y + y * scale);
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -299,6 +405,15 @@ public sealed class CanvasView : Decorator
         var view = e.GetPosition(this);
         var image = ToImage(view);
         dragOrigin = image;
+
+        // The canvas tool works on the canvas and on nothing else. Its grips sit on the boundary,
+        // where an annotation's own would be indistinguishable from them, and the objects on the
+        // picture are not what is being resized.
+        if (Tool == EditorTool.Canvas)
+        {
+            BeginCanvasResize(view, image, e);
+            return;
+        }
 
         // Text is opened for editing by double clicking it, whichever tool happens to be active.
         if (e.ClickCount >= 2 && HitTest(image) is TextAnnotation existing)
@@ -425,9 +540,21 @@ public sealed class CanvasView : Decorator
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
+        if (canvasGrip != DragKind.None)
+        {
+            ResizeCanvas(ToImage(e.GetPosition(this)) - grabOffset);
+            return;
+        }
+
         if (dragging == DragKind.None)
         {
             var over = e.GetPosition(this);
+
+            if (Tool == EditorTool.Canvas)
+            {
+                Cursor = new Cursor(CursorFor(HitCanvasEdge(over)));
+                return;
+            }
 
             Cursor = new Cursor(
                 HitHandle(over) != DragKind.None ? StandardCursorType.SizeAll
@@ -507,64 +634,263 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        var left = baseline.X;
-        var top = baseline.Y;
-        var right = baseline.X + baseline.Width;
-        var bottom = baseline.Y + baseline.Height;
+        // Each grip moves the edges it names and leaves the others where they were. A mid handle
+        // names one, a corner names two, and creating names the bottom right of a rectangle grown
+        // from where the press landed.
+        var left = MovesLeft(dragging) ? image.X : baseline.X;
+        var top = MovesTop(dragging) ? image.Y : baseline.Y;
+        var right = MovesRight(dragging) ? image.X : baseline.X + baseline.Width;
+        var bottom = MovesBottom(dragging) ? image.Y : baseline.Y + baseline.Height;
 
-        if (dragging is DragKind.Create or DragKind.RectBottomRight)
-        {
-            right = image.X;
-            bottom = image.Y;
-        }
-
-        if (dragging is DragKind.RectTopLeft)
-        {
-            left = image.X;
-            top = image.Y;
-        }
-
-        // The mid handles move one edge only, so the other axis keeps the baseline's value.
-        if (dragging is DragKind.RectTop)
-        {
-            top = image.Y;
-        }
-
-        if (dragging is DragKind.RectBottom)
-        {
-            bottom = image.Y;
-        }
-
-        if (dragging is DragKind.RectLeft)
-        {
-            left = image.X;
-        }
-
-        if (dragging is DragKind.RectRight)
-        {
-            right = image.X;
-        }
-
-        if (dragging is DragKind.RectTopRight)
-        {
-            right = image.X;
-            top = image.Y;
-        }
-
-        if (dragging is DragKind.RectBottomLeft)
-        {
-            left = image.X;
-            bottom = image.Y;
-        }
-
+        // Dragged through itself, a rectangle turns inside out rather than stopping, which is what
+        // lets a box be drawn in any direction.
         rect.X = Math.Min(left, right);
         rect.Y = Math.Min(top, bottom);
         rect.Width = Math.Abs(right - left);
         rect.Height = Math.Abs(bottom - top);
     }
 
+    // Which edges a grip moves. Shared with the canvas, which is dragged by the same eight grips
+    // and differs only in what it does at the limit.
+
+    static bool MovesLeft(DragKind grip) =>
+        grip is DragKind.RectLeft or DragKind.RectTopLeft or DragKind.RectBottomLeft;
+
+    static bool MovesRight(DragKind grip) =>
+        grip is DragKind.Create or DragKind.RectRight or DragKind.RectTopRight or DragKind.RectBottomRight;
+
+    static bool MovesTop(DragKind grip) =>
+        grip is DragKind.RectTop or DragKind.RectTopLeft or DragKind.RectTopRight;
+
+    static bool MovesBottom(DragKind grip) =>
+        grip is DragKind.Create or DragKind.RectBottom or DragKind.RectBottomLeft or DragKind.RectBottomRight;
+
+    // ---- Resizing the canvas ----------------------------------------------------------------
+    //
+    // The canvas is the rectangle that gets exported, and it is not obliged to match the capture.
+    // Pulling an edge in crops the picture; pushing one out adds space, and what it adds is
+    // transparent. Neither touches a pixel of the capture or moves a single annotation: cropping is
+    // geometry, so an edge pulled in can always be pulled back out again.
+
+    /// <summary>Nothing smaller than this, in image pixels. A canvas of nothing is not a canvas.</summary>
+    public const int MinimumCanvas = 16;
+
+    /// <summary>How much of the space available the canvas tool keeps back to drag an edge out into.</summary>
+    const double CanvasToolSlack = 0.88;
+
+    /// <summary>How far in from the boundary counts as grabbing it.</summary>
+    const double EdgeReach = 10;
+
+    /// <summary>How far along the boundary from a corner still counts as the corner rather than the side.</summary>
+    const double CornerReach = 24;
+
+    void BeginCanvasResize(Point view, Point image, PointerPressedEventArgs e)
+    {
+        // Nothing on the picture is being worked on in this mode, and a selection outline left
+        // over from the last one only adds handles that do nothing.
+        Select(null);
+
+        var grip = HitCanvasEdge(view);
+        if (grip == DragKind.None)
+        {
+            return;
+        }
+
+        canvasGrip = grip;
+        canvasBaseline = CanvasRect();
+        grabOffset = image - AnchorOf(grip, canvasBaseline);
+
+        // Frozen before the first move, so the picture cannot resize under the pointer that is
+        // sizing it.
+        pinnedScale = Scale;
+        undoPending = true;
+
+        e.Pointer.Capture(this);
+        CanvasResizeStarted?.Invoke();
+    }
+
+    void ResizeCanvas(Point to)
+    {
+        if (undoPending)
+        {
+            BeforeChange?.Invoke();
+            undoPending = false;
+        }
+
+        // Whole pixels, because that is what the canvas is measured in and what gets exported.
+        var x = Math.Round(to.X);
+        var y = Math.Round(to.Y);
+
+        // Stopped at the minimum rather than turned inside out. A rectangle drawn backwards is a
+        // rectangle; a canvas dragged past its far edge would swing the picture across the screen.
+        var left = MovesLeft(canvasGrip) ? Math.Min(x, canvasBaseline.Right - MinimumCanvas) : canvasBaseline.X;
+        var top = MovesTop(canvasGrip) ? Math.Min(y, canvasBaseline.Bottom - MinimumCanvas) : canvasBaseline.Y;
+        var right = MovesRight(canvasGrip) ? Math.Max(x, canvasBaseline.X + MinimumCanvas) : canvasBaseline.Right;
+        var bottom = MovesBottom(canvasGrip) ? Math.Max(y, canvasBaseline.Y + MinimumCanvas) : canvasBaseline.Bottom;
+
+        var canvas = snapshot.Document.Canvas;
+        canvas.X = (int)left;
+        canvas.Y = (int)top;
+        canvas.Width = (int)(right - left);
+        canvas.Height = (int)(bottom - top);
+
+        // How far the control's own top-left corner has to move to leave the capture exactly where
+        // it is on screen. Without it the layout recentres the growing canvas and drags the picture
+        // out from under the pointer.
+        CanvasResizeMoved?.Invoke(new Vector(
+            (canvas.X - canvasBaseline.X) * pinnedScale,
+            (canvas.Y - canvasBaseline.Y) * pinnedScale));
+
+        Changed?.Invoke();
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Ends a canvas drag and hands the layout back.
+    ///
+    /// Called from both the release and the loss of capture, and safe either way round: capture is
+    /// released on the way out of a drag, and losing it to a window switch or a cancelled touch has
+    /// to end the drag too. A drag left running would hold the picture pinned where it was and
+    /// resize the canvas on the next movement of the pointer, with no button held at all.
+    /// </summary>
+    void EndCanvasResize()
+    {
+        if (canvasGrip == DragKind.None)
+        {
+            return;
+        }
+
+        // Nothing moved means nothing happened: pressing on the boundary and letting go must not
+        // mark the document as changed, exactly as pressing on an annotation does not.
+        var resized = !undoPending;
+
+        canvasGrip = DragKind.None;
+        undoPending = false;
+
+        // The picture goes back to being laid out normally, which settles it into the middle of its
+        // mat and, when fitting, into the whole of the space now available.
+        pinnedScale = 0;
+        CanvasResizeEnded?.Invoke();
+
+        InvalidateMeasure();
+        InvalidateVisual();
+
+        if (resized)
+        {
+            Changed?.Invoke();
+        }
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        EndCanvasResize();
+        base.OnPointerCaptureLost(e);
+    }
+
+    /// <summary>
+    /// Which part of the canvas boundary the pointer is on, if any.
+    ///
+    /// The whole of a side is grabbable rather than only a handle in the middle of it: an edge is
+    /// what the eye sees and what the hand goes for. The corners take a longer stretch of both
+    /// their sides, so the one place two grips meet is not a pixel hunt.
+    /// </summary>
+    DragKind HitCanvasEdge(Point view)
+    {
+        var onEdge = view.X <= EdgeReach || view.X >= Bounds.Width - EdgeReach
+            || view.Y <= EdgeReach || view.Y >= Bounds.Height - EdgeReach;
+
+        if (!onEdge)
+        {
+            return DragKind.None;
+        }
+
+        var horizontal = view.X <= CornerReach ? -1 : view.X >= Bounds.Width - CornerReach ? 1 : 0;
+        var vertical = view.Y <= CornerReach ? -1 : view.Y >= Bounds.Height - CornerReach ? 1 : 0;
+
+        return (horizontal, vertical) switch
+        {
+            (-1, -1) => DragKind.RectTopLeft,
+            (1, -1) => DragKind.RectTopRight,
+            (-1, 1) => DragKind.RectBottomLeft,
+            (1, 1) => DragKind.RectBottomRight,
+            (-1, 0) => DragKind.RectLeft,
+            (1, 0) => DragKind.RectRight,
+            (0, -1) => DragKind.RectTop,
+            (0, 1) => DragKind.RectBottom,
+            _ => DragKind.None
+        };
+    }
+
+    static StandardCursorType CursorFor(DragKind grip) => grip switch
+    {
+        DragKind.RectLeft or DragKind.RectRight => StandardCursorType.SizeWestEast,
+        DragKind.RectTop or DragKind.RectBottom => StandardCursorType.SizeNorthSouth,
+        DragKind.RectTopLeft => StandardCursorType.TopLeftCorner,
+        DragKind.RectTopRight => StandardCursorType.TopRightCorner,
+        DragKind.RectBottomLeft => StandardCursorType.BottomLeftCorner,
+        DragKind.RectBottomRight => StandardCursorType.BottomRightCorner,
+        _ => StandardCursorType.Arrow
+    };
+
+    /// <summary>Whether the canvas reaches past the capture on any side, and so has transparency to show.</summary>
+    bool HasTransparency()
+    {
+        var canvas = snapshot.Document.Canvas;
+        var image = snapshot.Bitmap.PixelSize;
+
+        return canvas.X < 0 || canvas.Y < 0
+            || canvas.X + canvas.Width > image.Width
+            || canvas.Y + canvas.Height > image.Height;
+    }
+
+    static IBrush BuildChequerboard()
+    {
+        const double tile = 2 * ChequerCell;
+
+        var group = new DrawingGroup
+        {
+            Children =
+            {
+                new GeometryDrawing
+                {
+                    Brush = SnapShotKit.Ui.Tokens.Neutral100Brush,
+                    Geometry = new RectangleGeometry(new Rect(0, 0, tile, tile))
+                },
+                new GeometryDrawing
+                {
+                    Brush = SnapShotKit.Ui.Tokens.Neutral300Brush,
+                    Geometry = new RectangleGeometry(new Rect(0, 0, ChequerCell, ChequerCell))
+                },
+                new GeometryDrawing
+                {
+                    Brush = SnapShotKit.Ui.Tokens.Neutral300Brush,
+                    Geometry = new RectangleGeometry(new Rect(ChequerCell, ChequerCell, ChequerCell, ChequerCell))
+                }
+            }
+        };
+
+        return new DrawingBrush
+        {
+            Drawing = group,
+            TileMode = TileMode.Tile,
+            Stretch = Stretch.Fill,
+            SourceRect = new RelativeRect(0, 0, tile, tile, RelativeUnit.Absolute),
+            DestinationRect = new RelativeRect(0, 0, tile, tile, RelativeUnit.Absolute)
+        };
+    }
+
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (canvasGrip != DragKind.None)
+        {
+            // Letting the capture go is itself reported as capture lost, which is where the drag
+            // ends; the call after it is then the no-op that makes the order not matter.
+            e.Pointer.Capture(null);
+            EndCanvasResize();
+            return;
+        }
+
         e.Pointer.Capture(null);
 
         // A click with a drawing tool leaves a zero-sized annotation behind, which would be
@@ -643,14 +969,21 @@ public sealed class CanvasView : Decorator
     {
         (ArrowAnnotation arrow, DragKind.ArrowFrom) => new Point(arrow.X1, arrow.Y1),
         (ArrowAnnotation arrow, DragKind.ArrowTo) => new Point(arrow.X2, arrow.Y2),
-        (RectAnnotation rect, DragKind.RectTopLeft) => new Point(rect.X, rect.Y),
-        (RectAnnotation rect, DragKind.RectTopRight) => new Point(rect.X + rect.Width, rect.Y),
-        (RectAnnotation rect, DragKind.RectBottomLeft) => new Point(rect.X, rect.Y + rect.Height),
-        (RectAnnotation rect, DragKind.RectBottomRight) => new Point(rect.X + rect.Width, rect.Y + rect.Height),
-        (RectAnnotation rect, DragKind.RectTop) => new Point(rect.X + rect.Width / 2, rect.Y),
-        (RectAnnotation rect, DragKind.RectBottom) => new Point(rect.X + rect.Width / 2, rect.Y + rect.Height),
-        (RectAnnotation rect, DragKind.RectLeft) => new Point(rect.X, rect.Y + rect.Height / 2),
-        (RectAnnotation rect, DragKind.RectRight) => new Point(rect.X + rect.Width, rect.Y + rect.Height / 2),
+        (RectAnnotation rect, _) => AnchorOf(grip, new Rect(rect.X, rect.Y, rect.Width, rect.Height)),
+        _ => default
+    };
+
+    /// <summary>The same, for any rectangle. The canvas is dragged by the same grips as a box is.</summary>
+    static Point AnchorOf(DragKind grip, Rect rect) => grip switch
+    {
+        DragKind.RectTopLeft => rect.TopLeft,
+        DragKind.RectTopRight => rect.TopRight,
+        DragKind.RectBottomLeft => rect.BottomLeft,
+        DragKind.RectBottomRight => rect.BottomRight,
+        DragKind.RectTop => new Point(rect.Center.X, rect.Y),
+        DragKind.RectBottom => new Point(rect.Center.X, rect.Bottom),
+        DragKind.RectLeft => new Point(rect.X, rect.Center.Y),
+        DragKind.RectRight => new Point(rect.Right, rect.Center.Y),
         _ => default
     };
 
@@ -745,8 +1078,15 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        // No backdrop of its own: the canvas is exactly the picture, and the mat it sits on belongs
-        // to the window around it.
+        // A chequerboard wherever the canvas reaches past the capture, which is the only backdrop
+        // this control has: everywhere else the picture covers it, and the mat around it belongs to
+        // the window. Editing chrome, like the outlines below it: an export paints nothing there,
+        // which is what makes the transparency real rather than drawn.
+        if (HasTransparency())
+        {
+            context.FillRectangle(Chequerboard, target);
+        }
+
         SnapshotRenderer.Draw(context, snapshot, blurs, target, editing);
 
         // The selection outline sits outside the object rather than on it, so an object keeps its
@@ -783,10 +1123,48 @@ public sealed class CanvasView : Decorator
 
         foreach (var (_, point) in Handles())
         {
-            var handle = new Rect(point.X - HandleSize / 2, point.Y - HandleSize / 2, HandleSize, HandleSize);
-            context.FillRectangle(HandleFill, handle);
-            context.DrawRectangle(HandleBorder, handle);
+            DrawHandle(context, point);
         }
+
+        if (Tool == EditorTool.Canvas)
+        {
+            DrawCanvasGrips(context, target);
+        }
+    }
+
+    /// <summary>
+    /// The canvas boundary and its eight grips.
+    ///
+    /// Set in by half a handle rather than centred on the boundary. The control is clipped to the
+    /// canvas, so a grip straddling the edge would be sliced down the middle, and a handle showing
+    /// half of itself reads as a rendering fault rather than as something to grab.
+    /// </summary>
+    void DrawCanvasGrips(DrawingContext context, Rect target)
+    {
+        var inset = target.Deflate(HandleSize / 2);
+
+        if (inset.Width <= 0 || inset.Height <= 0)
+        {
+            return;
+        }
+
+        DrawSelectionBox(context, inset);
+
+        foreach (var grip in new[]
+                 {
+                     DragKind.RectTopLeft, DragKind.RectTop, DragKind.RectTopRight, DragKind.RectRight,
+                     DragKind.RectBottomRight, DragKind.RectBottom, DragKind.RectBottomLeft, DragKind.RectLeft
+                 })
+        {
+            DrawHandle(context, AnchorOf(grip, inset));
+        }
+    }
+
+    static void DrawHandle(DrawingContext context, Point at)
+    {
+        var handle = new Rect(at.X - HandleSize / 2, at.Y - HandleSize / 2, HandleSize, HandleSize);
+        context.FillRectangle(HandleFill, handle);
+        context.DrawRectangle(HandleBorder, handle);
     }
 
     static Rect Outline(Rect around) => around.Inflate(SelectionOffset);

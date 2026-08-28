@@ -60,6 +60,9 @@ public static class Lucide
     /// <summary>circle with a one in it. The numbered marker, drawn rather than taken from the set, which has no numbered disc.</summary>
     public const string Step = "M12,3 A9,9 0 1 1 11.9,3 Z M10.6,9.6 L12.6,8.4 L12.6,15.6 M10.6,15.6 L14.6,15.6";
 
+    /// <summary>crop. Resizing the canvas.</summary>
+    public const string Crop = "M6,2 V16 A2,2 0 0 0 8,18 H22 M18,22 V8 A2,2 0 0 0 16,6 H2";
+
     /// <summary>folder. The library.</summary>
     public const string Library = "M4,20 A2,2 0 0 1 2,18 V5 A2,2 0 0 1 4,3 H9 L12,6 H20 A2,2 0 0 1 22,8 V18 A2,2 0 0 1 20,20 Z";
 

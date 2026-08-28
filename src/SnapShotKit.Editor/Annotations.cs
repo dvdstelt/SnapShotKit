@@ -185,8 +185,23 @@ public sealed class StepAnnotation : Annotation
     };
 }
 
-public sealed class CanvasSize
+/// <summary>
+/// The canvas: the rectangle that actually gets exported, expressed in image pixels.
+///
+/// It is a rectangle rather than a size because it no longer has to coincide with the capture. The
+/// canvas can be pulled in to crop the picture, or pushed out past it to add space, and what it
+/// adds is transparent. <see cref="X"/> and <see cref="Y"/> say where its top-left corner sits
+/// relative to the capture's, so a canvas wider than the capture has a negative one.
+///
+/// Keeping the origin on the capture rather than on the canvas is what makes resizing cheap: every
+/// annotation is positioned against the picture it was drawn on, so moving the canvas moves nothing
+/// else. Documents written before any of this existed have no offset at all, and zero is precisely
+/// what they meant.
+/// </summary>
+public sealed class CanvasArea
 {
+    public int X { get; set; }
+    public int Y { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
 }
@@ -202,18 +217,18 @@ public sealed class SnapshotDocument
     /// the order they are in, which is what makes moving an object forward or back mean anything.
     /// A version 1 document is reordered as it is opened, so it still looks exactly as it did.
     /// </summary>
-    public const int Current = 2;
+    public const int Current = 3;
 
     public int Version { get; set; } = Current;
 
-    public CanvasSize Canvas { get; set; } = new();
+    public CanvasArea Canvas { get; set; } = new();
 
     public List<Annotation> Layers { get; set; } = [];
 
     public SnapshotDocument Copy() => new()
     {
         Version = Version,
-        Canvas = new CanvasSize { Width = Canvas.Width, Height = Canvas.Height },
+        Canvas = new CanvasArea { X = Canvas.X, Y = Canvas.Y, Width = Canvas.Width, Height = Canvas.Height },
         Layers = [.. Layers.Select(layer => layer.Copy())]
     };
 }
