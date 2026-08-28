@@ -31,6 +31,9 @@ BuildRequires:  pipewire-devel
 BuildRequires:  /usr/bin/glib-compile-schemas
 BuildRequires:  /usr/bin/desktop-file-validate
 BuildRequires:  /usr/bin/appstreamcli
+# Defines %%{_userunitdir}. A minimal build root does not have it, and an undefined macro in
+# %%files fails the build after everything has already been compiled.
+BuildRequires:  systemd-rpm-macros
 
 Requires:       dotnet-runtime-10.0
 Requires:       pipewire-libs

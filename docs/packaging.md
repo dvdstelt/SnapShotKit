@@ -26,6 +26,20 @@ dotnet-sdk-10.0 gcc make pipewire-devel glib2-devel
 
 `global.json` asks for SDK 10.0.100 with `latestFeature`, which Fedora's 10.0.111 satisfies. It used to ask for 10.0.200, which it does not: a higher feature band than the distro ships means the build cannot find an SDK at all.
 
+## Macros need declaring
+
+A build root is minimal, and a macro it does not know is not an error until the very end: `%{_userunitdir}` expanded to itself, and the build failed assembling the file list after everything had already compiled. `systemd-rpm-macros` is a build requirement for that reason. `%{_metainfodir}` needs nothing, because `redhat-rpm-config` is in every build root already.
+
+The cheap check is to expand the spec and confirm every packaged path starts with a slash:
+
+```bash
+rpmspec -P packaging/snapshotkit.spec | sed -n '/^%files/,/^%post/p'
+```
+
+## The tarball is named after the repository
+
+Both GitHub's archive endpoint and COPR name the directory inside the tarball after the repository, `SnapShotKit-0.1.0`, not after the package. `%prep` unpacks that, and the release workflow prefixes its own tarball to match, so one spec handles all three. Building only from a tarball the workflow generated hides this: it was the workflow's own prefix that agreed with the spec, and nothing else did.
+
 ## Publishing flags that matter
 
 Both are in the Makefile, and both were mistakes worth recording.
