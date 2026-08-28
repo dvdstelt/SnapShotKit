@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="SnapShotKit.Cli/SnapShotKit.Cli.csproj" />
+  <Project Path="SnapShotKit.Contracts/SnapShotKit.Contracts.csproj" />
+  <Project Path="SnapShotKit.Daemon/SnapShotKit.Daemon.csproj" />
+  <Project Path="SnapShotKit.Editor/SnapShotKit.Editor.csproj" />
+  <Project Path="SnapShotKit.Overlay/SnapShotKit.Overlay.csproj" />
+  <Project Path="SnapShotKit.Ui/SnapShotKit.Ui.csproj" />
+  <Project Path="SnapShotKit.Portal/SnapShotKit.Portal.csproj" />
+  <Project Path="SnapShotKit.Spike.PortalCapture/SnapShotKit.Spike.PortalCapture.csproj" />
+  <Project Path="SnapShotKit.Spike.ScreenCast/SnapShotKit.Spike.ScreenCast.csproj" />
+</Solution>

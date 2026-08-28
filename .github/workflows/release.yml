@@ -1,0 +1,111 @@
+# Builds the RPM on a clean Fedora, and publishes it when a version tag is pushed.
+#
+# One workflow rather than two. Every push proves the package still builds; a tag additionally
+# attaches it to a release. Splitting those would mean two files that must not drift apart, for a
+# project where the build is the interesting part either way.
+#
+# It runs in a Fedora container rather than on the Ubuntu runner directly because the package is
+# built against Fedora's own .NET SDK and pipewire. Building against anything else would prove
+# something other than what is being shipped.
+
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    steps:
+      # Only what is needed to run this workflow. The package's own build requirements come from
+      # the spec further down, so the two cannot drift apart.
+      - name: Install the tools this workflow needs
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            dnf5-plugins rpm-build rpmdevtools git gh tar
+
+      - uses: actions/checkout@v4
+        with:
+          # The version comes from the tag, and describing it needs the history behind it.
+          fetch-depth: 0
+
+      - name: Work out the version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            # Untagged builds are still built and still have to produce a valid package, so they
+            # get the spec's own version with the commit appended.
+            version="$(rpmspec -q --qf '%{version}' --srpm packaging/snapshotkit.spec)^$(date +%Y%m%d)git${GITHUB_SHA::7}"
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Building ${version}"
+
+      # Read from the spec rather than listed here. Hand-copying build requirements into the
+      # workflow is how the first release failed: the spec asked for something the workflow did
+      # not install, and nothing connected the two.
+      - name: Install the package's build requirements
+        run: dnf builddep -y packaging/snapshotkit.spec
+
+      - name: Build the RPM
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+
+          rpmdev-setuptree
+          sed -i "s/^Version:.*/Version:        ${version}/" packaging/snapshotkit.spec
+
+          # The tarball is made from the checkout rather than downloaded, so what is packaged is
+          # exactly what is in the tree being tested.
+          git config --global --add safe.directory "$PWD"
+          git archive --format=tar.gz --prefix="snapshotkit-${version}/" \
+            -o ~/rpmbuild/SOURCES/"snapshotkit-${version}.tar.gz" HEAD
+
+          rpmbuild -ba packaging/snapshotkit.spec
+          find ~/rpmbuild/RPMS -name '*.rpm' -print
+
+      - name: Check the package installs and the commands are where they should be
+        run: |
+          set -euo pipefail
+          dnf install -y ~/rpmbuild/RPMS/x86_64/snapshotkit-*.rpm
+
+          # A package that installs but puts things somewhere unexpected is worse than one that
+          # fails, because it fails later and on someone else's machine.
+          test -x /usr/bin/snapshotkit
+          test -x /usr/bin/snapshotkit-editor
+          test -f /usr/lib/snapshotkit/snapshotkit-overlay
+          test -f /usr/lib/snapshotkit/snapshotkit-capture
+          test -f /usr/lib/systemd/user/snapshotkitd.service
+          test -f /usr/share/dbus-1/services/org.snapshotkit.Daemon.service
+          test -f /usr/share/applications/snapshotkit-editor.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/snapshotkit.png
+          test -f /usr/share/gnome-shell/extensions/snapshotkit@dvdstelt.github.io/extension.js
+
+          snapshotkit --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snapshotkit-rpm
+          path: ~/rpmbuild/RPMS/x86_64/*.rpm
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF#refs/tags/}" \
+            ~/rpmbuild/RPMS/x86_64/*.rpm \
+            --title "SnapShotKit ${{ steps.version.outputs.version }}" \
+            --generate-notes

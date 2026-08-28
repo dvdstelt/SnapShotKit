@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="snapshotkit">
+  <schema id="org.gnome.shell.extensions.snapshotkit" path="/org/gnome/shell/extensions/snapshotkit/">
+    <key name="capture" type="as">
+      <default><![CDATA[['Print']]]></default>
+      <summary>Capture</summary>
+      <description>Capture the screen and choose a region.</description>
+    </key>
+    <key name="capture-delayed" type="as">
+      <default><![CDATA[['<Shift>Print']]]></default>
+      <summary>Delayed capture</summary>
+      <description>Wait, then capture. For menus that close when you touch the keyboard.</description>
+    </key>
+    <key name="delay-seconds" type="i">
+      <default>5</default>
+      <summary>Delay in seconds</summary>
+      <description>How long the delayed capture waits.</description>
+    </key>
+  </schema>
+</schemalist>

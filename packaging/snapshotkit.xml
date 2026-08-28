@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <!--
+    A snapshot is a zip container holding the untouched capture and the annotations over it, in
+    the manner of ODF or OOXML. The magic below is the zip signature plus the name of the first
+    entry, which the writer deliberately puts first for exactly this reason.
+  -->
+  <mime-type type="application/vnd.snapshotkit.snapshot">
+    <comment>SnapShotKit snapshot</comment>
+    <glob pattern="*.ssk"/>
+    <generic-icon name="image-x-generic"/>
+    <icon name="snapshotkit"/>
+    <sub-class-of type="application/zip"/>
+    <magic priority="60">
+      <match type="string" value="PK\003\004" offset="0">
+        <match type="string" value="document.json" offset="30"/>
+      </match>
+    </magic>
+  </mime-type>
+</mime-info>

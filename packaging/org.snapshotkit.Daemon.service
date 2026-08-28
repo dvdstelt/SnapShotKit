@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.snapshotkit.Daemon
+Exec=/usr/lib/snapshotkit/snapshotkitd
+SystemdService=snapshotkitd.service

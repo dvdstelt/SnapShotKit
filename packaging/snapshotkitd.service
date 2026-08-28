@@ -1,0 +1,14 @@
+[Unit]
+Description=SnapShotKit capture daemon
+Documentation=https://github.com/dvdstelt/snapshotkit
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/snapshotkit/snapshotkitd
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

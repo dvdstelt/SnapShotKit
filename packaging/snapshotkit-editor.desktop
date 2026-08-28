@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=SnapShotKit
+GenericName=Screenshot Editor
+Comment=Capture a region of the screen and annotate it
+Exec=snapshotkit-editor %f
+Icon=snapshotkit
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;GTK;
+MimeType=application/vnd.snapshotkit.snapshot;
+Keywords=screenshot;capture;annotate;screen;snip;
+StartupNotify=true
+StartupWMClass=snapshotkit-editor

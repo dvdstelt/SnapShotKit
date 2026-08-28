@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What a software centre reads to show SnapShotKit as an application rather than as a package
+  name. Without this file the RPM installs perfectly well and never appears in GNOME Software.
+
+  The identifier is reverse-DNS because that is what every software centre expects and what
+  Flathub requires; the desktop file keeps its plainer name, and <launchable> ties the two
+  together.
+-->
+<component type="desktop-application">
+  <id>io.github.dvdstelt.SnapShotKit</id>
+  <launchable type="desktop-id">snapshotkit-editor.desktop</launchable>
+
+  <name>SnapShotKit</name>
+  <summary>Capture a region of the screen and annotate it</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <developer id="io.github.dvdstelt">
+    <name>Dennis van der Stelt</name>
+  </developer>
+
+  <description>
+    <p>
+      SnapShotKit captures the whole screen the moment you press the key, then lets you choose a
+      region from the frozen image. Nothing moves under the cursor while you aim, because what you
+      are aiming at is already a photograph.
+    </p>
+    <p>
+      The result opens in an editor with arrows, boxes, blur, text and numbered markers, and is
+      filed in a library grouped by day.
+    </p>
+    <p>
+      Annotations are kept as objects alongside the untouched capture, so anything drawn can be
+      moved, restyled or removed next week, and the picture underneath is never modified. Exporting
+      to PNG or JPEG renders the document rather than being the document.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Region selection on a frozen screen, with a magnifier for pixel-accurate edges</li>
+      <li>Arrows, boxes, blur, text and numbered markers, all editable after the fact</li>
+      <li>Blur that obscures the picture without ever covering the annotations over it</li>
+      <li>A library of past captures, grouped by day</li>
+      <li>Export to PNG or JPEG, or copy straight to the clipboard</li>
+    </ul>
+  </description>
+
+  <categories>
+    <category>Graphics</category>
+    <category>2DGraphics</category>
+    <category>RasterGraphics</category>
+  </categories>
+
+  <keywords>
+    <keyword>screenshot</keyword>
+    <keyword>capture</keyword>
+    <keyword>annotate</keyword>
+    <keyword>snip</keyword>
+  </keywords>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Annotating a capture in the editor</caption>
+      <image>https://raw.githubusercontent.com/dvdstelt/SnapShotKit/main/assets/screenshots/editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The library of past captures, grouped by day</caption>
+      <image>https://raw.githubusercontent.com/dvdstelt/SnapShotKit/main/assets/screenshots/library.png</image>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/dvdstelt/SnapShotKit</url>
+  <url type="bugtracker">https://github.com/dvdstelt/SnapShotKit/issues</url>
+
+  <provides>
+    <binary>snapshotkit</binary>
+    <binary>snapshotkit-editor</binary>
+  </provides>
+
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-08-28">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

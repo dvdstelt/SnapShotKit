@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Take a Screenshot
+GenericName=Screen Capture
+Comment=Capture the screen with SnapShotKit and choose a region
+Exec=snapshotkit capture
+Icon=snapshotkit
+Terminal=false
+Categories=Graphics;2DGraphics;
+Keywords=screenshot;capture;snip;region;
+StartupNotify=false

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>SnapShotKit.Cli</RootNamespace>
+    <AssemblyName>snapshotkit</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- On the hot path: a JIT start costs 50-70 ms, AOT costs 3-8 ms. -->
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SnapShotKit.Contracts\SnapShotKit.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.0" />
+  </ItemGroup>
+
+</Project>

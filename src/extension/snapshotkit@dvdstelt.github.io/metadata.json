@@ -1,0 +1,9 @@
+{
+  "uuid": "snapshotkit@dvdstelt.github.io",
+  "name": "SnapShotKit",
+  "description": "Capture shortcuts and a panel menu for SnapShotKit. Registers its keybindings inside GNOME Shell, so they still fire while a shell menu holds a keyboard grab, and offers a delayed capture, the editor and the snapshots folder from the top bar.",
+  "shell-version": ["48", "49", "50"],
+  "settings-schema": "org.gnome.shell.extensions.snapshotkit",
+  "session-modes": ["user"],
+  "url": "https://github.com/dvdstelt/snapshotkit"
+}
