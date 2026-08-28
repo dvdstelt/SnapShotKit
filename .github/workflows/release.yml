@@ -70,8 +70,10 @@ jobs:
           # The tarball is made from the checkout rather than downloaded, so what is packaged is
           # exactly what is in the tree being tested.
           git config --global --add safe.directory "$PWD"
-          git archive --format=tar.gz --prefix="snapshotkit-${version}/" \
-            -o ~/rpmbuild/SOURCES/"snapshotkit-${version}.tar.gz" HEAD
+          # Prefixed with the repository name, matching what GitHub's archive endpoint and COPR
+          # both produce, so the one spec unpacks all three.
+          git archive --format=tar.gz --prefix="SnapShotKit-${version}/" \
+            -o ~/rpmbuild/SOURCES/"SnapShotKit-${version}.tar.gz" HEAD
 
           rpmbuild -ba packaging/snapshotkit.spec
           find ~/rpmbuild/RPMS -name '*.rpm' -print

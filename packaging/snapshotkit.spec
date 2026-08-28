@@ -1,5 +1,10 @@
 %global uuid snapshotkit@dvdstelt.github.io
 
+# The repository's own name, which is not the package's. Both GitHub's archive endpoint and COPR
+# name the directory inside the tarball after the repository, so %prep has to unpack that and not
+# the lowercase package name.
+%global forgename SnapShotKit
+
 # The published output is a mix of native binaries and managed assemblies that are already trimmed
 # and stripped, and rpmbuild's own post-processing has nothing useful to do to either.
 %global __brp_strip %{nil}
@@ -13,7 +18,7 @@ Summary:        Capture a region of the screen and annotate it
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/dvdstelt/snapshotkit
-Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
+Source0:        %{url}/archive/v%{version}/%{forgename}-%{version}.tar.gz
 
 ExclusiveArch:  x86_64
 
@@ -51,7 +56,7 @@ still works while a shell menu holds a keyboard grab, and offers a delayed captu
 the snapshots folder from the top bar.
 
 %prep
-%autosetup -n %{name}-%{version}
+%autosetup -n %{forgename}-%{version}
 
 %build
 # NuGet restore needs the network. Fedora's mock disables it by default; a COPR project has to have
