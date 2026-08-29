@@ -29,21 +29,25 @@ public static class SnapshotRenderer
         return brush;
     }
 
-    /// <param name="target">Where the canvas lands, which is not necessarily where the capture does.</param>
+    /// <param name="area">
+    /// The stretch of image space being drawn, in image pixels. Usually the canvas, which is what
+    /// gets exported. The editor passes something larger while the canvas is being resized, so that
+    /// what falls outside it can be seen rather than guessed at.
+    /// </param>
+    /// <param name="target">Where that stretch lands.</param>
     /// <param name="suppress">
     /// An annotation to leave undrawn. Used while text is being typed in place, where the editor
     /// itself is showing the words: drawing them underneath as well would double every stroke.
     /// </param>
-    public static void Draw(DrawingContext context, Snapshot snapshot, BlurCache blurs, Rect target,
+    public static void Draw(DrawingContext context, Snapshot snapshot, BlurCache blurs, Rect target, Rect area,
         Annotation? suppress = null)
     {
-        var canvas = snapshot.Document.Canvas;
-        var scale = canvas.Width == 0 ? 1 : target.Width / canvas.Width;
+        var scale = area.Width == 0 ? 1 : target.Width / area.Width;
 
         // Everything drawn on a snapshot is positioned against the capture's top-left corner rather
         // than the canvas's, so that cropping the canvas in or pushing it out moves nothing that was
         // drawn on it. This is where that corner falls on the target.
-        var origin = Origin(canvas, target, scale);
+        var origin = Origin(area, target, scale);
 
         // The capture at its own size, wherever the canvas sits around it. Whatever the canvas
         // covers beyond the capture is simply not painted, which is what makes it transparent.
@@ -229,13 +233,13 @@ public static class SnapshotRenderer
     }
 
     /// <summary>
-    /// Where the capture's top-left corner falls, given where the canvas has been put.
+    /// Where the capture's top-left corner falls, given which stretch of image space is on show.
     ///
     /// Shared with the editing canvas, which has to map a pointer back the other way and must agree
     /// with this to the pixel or every click lands somewhere else than it looks.
     /// </summary>
-    public static Point Origin(CanvasArea canvas, Rect target, double scale) =>
-        new(target.X - canvas.X * scale, target.Y - canvas.Y * scale);
+    public static Point Origin(Rect area, Rect target, double scale) =>
+        new(target.X - area.X * scale, target.Y - area.Y * scale);
 
     public static Color ParseColor(string value)
         => Color.TryParse(value, out var color) ? color : Colors.Red;

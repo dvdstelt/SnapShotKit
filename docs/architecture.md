@@ -118,11 +118,17 @@ Annotations that are defined by a rectangle share a `RectAnnotation` base, so th
 
 ## Resizing the canvas
 
-The canvas is the rectangle that gets exported, and it does not have to match the capture. Dragging an edge in crops the picture, and dragging one out adds space that is transparent. Neither touches `original.png`: a crop is geometry, so an edge pulled in can be pulled back out and the pixels are still there, which is the same promise the annotations get.
+The canvas is the rectangle that gets exported, and it does not have to match the capture. Dragging an edge in crops the picture, dragging one out adds space that is transparent, and dragging the middle aims the canvas at the part worth keeping. Nothing touches `original.png`: a crop is geometry, so an edge pulled in can be pulled back out and the pixels are still there, which is the same promise the annotations get.
 
 Coordinates stay measured from the capture rather than from the canvas. That is what makes resizing cheap: every annotation is positioned against the picture it was drawn on, so moving the canvas moves nothing else, and cropping never rewrites a document to say where everything is now. Annotations that fall outside the canvas are clipped rather than deleted, on the editing canvas exactly as in the export.
 
-While an edge is being dragged the picture is held still: the scale is frozen and the canvas is placed by hand instead of centred on its mat. A canvas that refits as it grows moves the picture out from under the pointer that is sizing it, and the drag then chases its own tail. It goes back to being centred, and to fitting, when the edge is let go. For the same reason the canvas tool keeps a margin of the space available back rather than fitting exactly: an edge flush against the room available has nowhere to be dragged out to.
+**It is a mode, and while it lasts the editor shows more than the canvas.** This is the whole of the idea. A canvas clipped to itself gives no way to see what an edge is about to cut away, so the mode lays the picture out on a working surface larger than both the canvas and the capture, dims everything outside the canvas rather than hiding it, and leaves a margin around the pair to drag outward into. What is being cropped stays on screen, greyed, until it is actually cropped.
+
+The boundary is drawn as hairlines with the thirds marked inside it, not as the heavy two-toned outline a selected annotation gets. A thick line over the boundary hides the very pixels being decided about, and the dimmed surround already says which side of the line is which.
+
+Nothing reaches the document until the resize is applied, so the whole negotiation is one undo step or none, and a resize abandoned costs nothing. Applying and abandoning are offered on a small bar under the canvas, which is the one place in this window where anything floats over the picture: the band is right for settings, which are always there, while this is a question with two answers, asked only while the mode is open and answered where the eye already is. Enter and Escape answer it too.
+
+The scale is frozen for the length of the mode and the working surface only ever grows, so the picture never moves while an edge is being dragged. A surface that refits as the canvas grows would take the picture out from under the pointer that is sizing it, and the drag would chase its own tail. When the surface does have to grow, because the canvas was dragged clean out of it, the window places it by hand so that the capture stays exactly where it is on screen.
 
 Transparency is drawn as a chequerboard on the editing canvas and as nothing at all in an export, which is the same split as a blurred region's hairline edge. The affordance belongs to editing; the picture is the picture. JPEG has no alpha, so what would have been transparent is filled with white on the way out rather than arriving black.
 

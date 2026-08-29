@@ -34,8 +34,8 @@ public sealed class EditorWindow : Window
     readonly Panel canvasHost = new();
     readonly TextBlock status;
 
-    /// <summary>The framed canvas, kept because resizing the canvas has to place it by hand for the length of the drag.</summary>
-    Blueprint frame;
+    /// <summary>The framed working surface, kept because a canvas drag has to place it by hand for as long as it lasts.</summary>
+    Blueprint framedCanvas;
 
     CancellationTokenSource thumbnailWork = new();
 
@@ -92,7 +92,7 @@ public sealed class EditorWindow : Window
             Child = scroller
         };
 
-        frame = ShowCanvas();
+        framedCanvas = ShowCanvas();
         SetZoom(null);
 
         var layout = new DockPanel();
@@ -155,29 +155,32 @@ public sealed class EditorWindow : Window
     /// <summary>
     /// Holds the picture still for the length of a canvas drag.
     ///
-    /// The canvas is centred on its mat, so a canvas growing to the right would move half as far to
-    /// the left, sliding the picture out from under the pointer that is sizing it. Anchoring it
-    /// where it already sits, and then following the canvas's own corner, keeps every pixel of the
-    /// capture exactly where it is and leaves only the boundary moving. It goes back to being
+    /// The working surface is centred on its mat, so one growing to the right would move half as
+    /// far to the left, sliding the picture out from under the pointer that is sizing the canvas.
+    /// Anchoring it where it already sits, and then following its own corner, keeps every pixel of
+    /// the capture exactly where it is and leaves only the boundary moving. It goes back to being
     /// centred when the drag ends, which is also when it settles into whatever size it now needs.
+    ///
+    /// Usually there is nothing to follow: the surface only changes when the canvas is dragged
+    /// clean out of it, and until then this holds the picture exactly where it already was.
     /// </summary>
     void PinCanvas()
     {
-        pinned = frame.Bounds.Position;
+        pinned = framedCanvas.Bounds.Position;
 
-        frame.HorizontalAlignment = HorizontalAlignment.Left;
-        frame.VerticalAlignment = VerticalAlignment.Top;
-        frame.Margin = new Thickness(pinned.X, pinned.Y, 0, 0);
+        framedCanvas.HorizontalAlignment = HorizontalAlignment.Left;
+        framedCanvas.VerticalAlignment = VerticalAlignment.Top;
+        framedCanvas.Margin = new Thickness(pinned.X, pinned.Y, 0, 0);
     }
 
     void MoveCanvas(Vector shift) =>
-        frame.Margin = new Thickness(pinned.X + shift.X, pinned.Y + shift.Y, 0, 0);
+        framedCanvas.Margin = new Thickness(pinned.X + shift.X, pinned.Y + shift.Y, 0, 0);
 
     void UnpinCanvas()
     {
-        frame.Margin = default;
-        frame.HorizontalAlignment = HorizontalAlignment.Center;
-        frame.VerticalAlignment = VerticalAlignment.Center;
+        framedCanvas.Margin = default;
+        framedCanvas.HorizontalAlignment = HorizontalAlignment.Center;
+        framedCanvas.VerticalAlignment = VerticalAlignment.Center;
     }
 
     void BuildMenus()
@@ -358,53 +361,45 @@ public sealed class EditorWindow : Window
 
         // The canvas keeps its top-left corner when it is given a size outright. A typed width says
         // how wide, not which way to grow, and growing from the corner already on screen is the
-        // answer that needs no explaining.
-        band.CanvasWidthChosen += width =>
-            ResizeCanvas("width", area => area.Width = Math.Max(width, CanvasView.MinimumCanvas));
-
-        band.CanvasHeightChosen += height =>
-            ResizeCanvas("height", area => area.Height = Math.Max(height, CanvasView.MinimumCanvas));
-
+        // answer that needs no explaining. Nothing is applied yet: the fields propose, exactly as
+        // dragging an edge does, and the resize is confirmed as a whole.
+        band.CanvasWidthChosen += width => canvas.ProposeCanvasSize(width, null);
+        band.CanvasHeightChosen += height => canvas.ProposeCanvasSize(null, height);
         band.CanvasFitRequested += FitCanvasToCapture;
     }
 
     /// <summary>
-    /// Changes the canvas as one undoable step, coalescing repeats of the same setting.
+    /// Puts the canvas back around the capture exactly, undoing whatever crop or padding it had.
     ///
-    /// The canvas is not an annotation, so it does not go through <see cref="Apply{T}"/>, but it
-    /// wants the same treatment: working a size field is one action rather than a step per commit.
+    /// A proposal while the canvas is being resized, and an edit in its own right otherwise, since
+    /// the menu offers it whatever tool happens to be in hand.
     /// </summary>
-    void ResizeCanvas(string property, Action<CanvasArea> change)
+    void FitCanvasToCapture()
     {
-        var edit = $"canvas|{property}";
-        if (edit != lastBandEdit)
+        if (canvas.IsResizingCanvas)
         {
-            Record();
-            lastBandEdit = edit;
+            canvas.ProposeCaptureBounds();
+            return;
         }
 
-        change(snapshot.Document.Canvas);
+        var capture = snapshot.Bitmap.PixelSize;
+        var area = snapshot.Document.Canvas;
+
+        if (area is { X: 0, Y: 0 } && area.Width == capture.Width && area.Height == capture.Height)
+        {
+            return;
+        }
+
+        Record();
+
+        area.X = 0;
+        area.Y = 0;
+        area.Width = capture.Width;
+        area.Height = capture.Height;
 
         dirty = true;
         canvas.CanvasResized();
         UpdateChrome();
-    }
-
-    /// <summary>Puts the canvas back around the capture exactly, undoing whatever crop or padding it had.</summary>
-    void FitCanvasToCapture()
-    {
-        var capture = snapshot.Bitmap.PixelSize;
-
-        // A command in its own right, so it is never folded into the edit before it.
-        lastBandEdit = null;
-
-        ResizeCanvas("fit", area =>
-        {
-            area.X = 0;
-            area.Y = 0;
-            area.Width = capture.Width;
-            area.Height = capture.Height;
-        });
     }
 
     /// <summary>Which tool's settings the band is currently showing, which is the selection's kind when there is one.</summary>
@@ -454,6 +449,11 @@ public sealed class EditorWindow : Window
         canvas.CanvasResizeStarted += PinCanvas;
         canvas.CanvasResizeMoved += MoveCanvas;
         canvas.CanvasResizeEnded += UnpinCanvas;
+        canvas.CanvasProposalChanged += UpdateChrome;
+
+        // Applied or abandoned, the mode is done with. Select is where it hands back to, since the
+        // thing just resized is the picture rather than anything on it.
+        canvas.CanvasResizeFinished += () => SetTool(EditorTool.Select);
     }
 
     /// <summary>Takes an undo snapshot. Anything newly done invalidates whatever had been undone.</summary>
@@ -487,14 +487,10 @@ public sealed class EditorWindow : Window
     void SetTool(EditorTool selected)
     {
         tool = selected;
-        canvas.Tool = selected;
 
-        // The canvas tool works on the canvas, so a selection left over from the last tool would
-        // only put handles on the picture that this one does not use.
-        if (selected == EditorTool.Canvas)
-        {
-            canvas.Select(null);
-        }
+        // Picking the canvas tool opens a resize, and leaving it abandons one that was never
+        // applied. The view owns that, because it owns what is being negotiated.
+        canvas.Tool = selected;
 
         canvas.Focus();
         UpdateChrome();
@@ -728,7 +724,7 @@ public sealed class EditorWindow : Window
         blurs = new BlurCache(next.OriginalPng);
         canvas = new CanvasView(next, blurs) { Zoom = canvas.Zoom };
         WireCanvas();
-        frame = ShowCanvas();
+        framedCanvas = ShowCanvas();
 
         // Both hold full-resolution bitmaps in native memory the collector cannot see, so leaving
         // them to finalisers would let every click in the strip stack another capture in memory.
@@ -766,8 +762,10 @@ public sealed class EditorWindow : Window
         band.ShowZoom(canvas.EffectiveScale);
         menu.Show(Path.GetFileName(snapshot.Path), dirty);
 
-        var size = snapshot.Document.Canvas;
-        band.ShowCanvasSize(size.Width, size.Height);
+        // The canvas being proposed while one is being resized, and the document's own otherwise:
+        // the readouts follow what is on screen, which is what the user is working on.
+        var size = canvas.ShownCanvas;
+        band.ShowCanvasSize((int)size.Width, (int)size.Height);
 
         var selection = canvas.Selected switch
         {
@@ -782,7 +780,7 @@ public sealed class EditorWindow : Window
         // The capture's own size is worth saying only once the canvas has stopped matching it,
         // which is exactly when "1920 × 1080" on its own would be ambiguous.
         var capture = snapshot.Bitmap.PixelSize;
-        var dimensions = size is { X: 0, Y: 0 } && size.Width == capture.Width && size.Height == capture.Height
+        var dimensions = size == new Rect(0, 0, capture.Width, capture.Height)
             ? $"{size.Width} × {size.Height}"
             : $"{size.Width} × {size.Height} canvas on a {capture.Width} × {capture.Height} capture";
 
@@ -917,6 +915,23 @@ public sealed class EditorWindow : Window
                 e.Handled = true;
             }
 
+            return;
+        }
+
+        // A resize is a question with two answers, and these are the two keys that answer it
+        // anywhere else in the system.
+        if (canvas.IsResizingCanvas && e.Key is Key.Enter or Key.Escape)
+        {
+            if (e.Key == Key.Enter)
+            {
+                canvas.ApplyCanvasResize();
+            }
+            else
+            {
+                canvas.CancelCanvasResize();
+            }
+
+            e.Handled = true;
             return;
         }
 

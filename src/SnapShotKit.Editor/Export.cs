@@ -39,7 +39,8 @@ public static class Export
 
         using (var context = rendered.CreateDrawingContext())
         {
-            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, canvas.Width, canvas.Height));
+            var area = new Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height);
+            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, canvas.Width, canvas.Height), area);
         }
 
         return rendered;

@@ -200,7 +200,7 @@ public sealed class ToolBand : Border
                      (EditorTool.Blur, Lucide.Blur, "Blur  (L)"),
                      (EditorTool.Step, Lucide.Step, "Numbered marker  (N)\nEach one takes the next number up."),
                      (EditorTool.Text, Lucide.Text, "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
-                     (EditorTool.Canvas, Lucide.Crop, "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.")
+                     (EditorTool.Canvas, Lucide.Crop, "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out.")
                  })
         {
             var icon = Lucide.Icon(glyph, 17, Tokens.Neutral800Brush);
