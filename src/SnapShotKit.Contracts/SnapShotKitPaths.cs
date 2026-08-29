@@ -43,6 +43,14 @@ public static class SnapShotKitPaths
 
     public static string RestoreTokenFile => Path.Combine(State, "screencast.token");
 
+    /// <summary>
+    /// What the editor was last doing: the styles on its band, and whatever joins them.
+    ///
+    /// State rather than data, and state rather than configuration: it is nobody's setting, it is
+    /// what the application noticed. Deleting it costs a few clicks to put a row back.
+    /// </summary>
+    public static string EditorStateFile => Path.Combine(State, "editor.json");
+
     public static void EnsureCreated()
     {
         Directory.CreateDirectory(Exports);

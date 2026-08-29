@@ -60,6 +60,9 @@ public sealed class StylePreview : Control
 /// recently, and a fourth one picked from the gallery takes the place of whichever of them has gone
 /// longest unused rather than pushing the row along: the hand learns where a style sits, and a row
 /// that reshuffled itself after every click would teach it nothing.
+///
+/// Which three that leaves is remembered between sessions, since a row that forgot itself every
+/// morning would be a row nobody bothers to arrange.
 /// </summary>
 public sealed class StyleField : StackPanel
 {
@@ -76,6 +79,9 @@ public sealed class StyleField : StackPanel
     const int GalleryColumns = 4;
 
     readonly Action<AnnotationStyle> chosen;
+
+    /// <summary>What the editor remembers between sessions. Told what changed; decides when to write.</summary>
+    readonly EditorState state;
     readonly Popup gallery;
     readonly Border opener;
 
@@ -83,15 +89,18 @@ public sealed class StyleField : StackPanel
     readonly StackPanel row = new() { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 
     /// <summary>What each tool has on the band, and how recently each of its styles was used.</summary>
-    readonly Dictionary<IReadOnlyList<AnnotationStyle>, Recents> recents = [];
+    readonly Dictionary<EditorTool, Recents> recents = [];
 
     readonly List<(AnnotationStyle Style, Border Ring)> cells = [];
 
     IReadOnlyList<AnnotationStyle> showing = [];
     AnnotationStyle? worn;
 
-    public StyleField(Action<AnnotationStyle> chosen)
+    EditorTool tool;
+
+    public StyleField(EditorState state, Action<AnnotationStyle> chosen)
     {
+        this.state = state;
         this.chosen = chosen;
 
         Orientation = Orientation.Horizontal;
@@ -117,11 +126,12 @@ public sealed class StyleField : StackPanel
     }
 
     /// <summary>Shows a tool's styles, with the one currently worn marked, or none of them.</summary>
-    public void Show(IReadOnlyList<AnnotationStyle> styles, AnnotationStyle? worn)
+    public void Show(EditorTool tool, IReadOnlyList<AnnotationStyle> styles, AnnotationStyle? worn)
     {
+        this.tool = tool;
         this.worn = worn;
 
-        var slots = Remembered(styles).Slots;
+        var slots = Remembered(tool, styles).Slots;
 
         if (!ReferenceEquals(showing, styles) || !cells.Select(cell => cell.Style).SequenceEqual(slots))
         {
@@ -221,36 +231,62 @@ public sealed class StyleField : StackPanel
     {
         gallery.IsOpen = false;
 
-        Remembered(showing).Use(style);
+        var remembered = Remembered(tool, showing);
+        remembered.Use(style);
+
+        state.RememberStyles(tool, remembered.Slots.Select(slot => slot.Name));
+
         chosen(style);
     }
 
-    Recents Remembered(IReadOnlyList<AnnotationStyle> styles)
+    Recents Remembered(EditorTool tool, IReadOnlyList<AnnotationStyle> styles)
     {
-        if (!recents.TryGetValue(styles, out var remembered))
+        if (!recents.TryGetValue(tool, out var remembered))
         {
-            remembered = new Recents(styles, Slots);
-            recents[styles] = remembered;
+            remembered = new Recents(styles, state.StylesFor(tool), Slots);
+            recents[tool] = remembered;
         }
 
         return remembered;
     }
 
-    /// <summary>
-    /// Which of a tool's styles are on the band, and how recently each was used.
-    ///
-    /// Kept for as long as the window is open and no longer. Carrying it between sessions would
-    /// mean a file to write, which is a thing to get wrong for a row that costs one click to put
-    /// back.
-    /// </summary>
+    /// <summary>Which of a tool's styles are on the band, and how recently each was used.</summary>
     sealed class Recents
     {
         readonly Dictionary<AnnotationStyle, int> used = [];
 
         int clock;
 
-        public Recents(IReadOnlyList<AnnotationStyle> styles, int slots) =>
-            Slots = [.. styles.Take(slots)];
+        /// <summary>
+        /// The row as it was left last time, filled up from the catalogue.
+        ///
+        /// Remembered by name, so a style that has since been renamed or dropped is simply not
+        /// there and the catalogue makes up the difference. Anything remembered counts as used, in
+        /// the order it sits in, so the first thing picked in a new session replaces the end of the
+        /// row rather than the style that was put at the front of it.
+        /// </summary>
+        public Recents(IReadOnlyList<AnnotationStyle> styles, IReadOnlyList<string> remembered, int slots)
+        {
+            Slots = [];
+
+            foreach (var name in remembered)
+            {
+                if (Slots.Count < slots && styles.FirstOrDefault(style => style.Name == name) is { } found
+                    && !Slots.Contains(found))
+                {
+                    used[found] = ++clock;
+                    Slots.Add(found);
+                }
+            }
+
+            foreach (var style in styles)
+            {
+                if (Slots.Count < slots && !Slots.Contains(style))
+                {
+                    Slots.Add(style);
+                }
+            }
+        }
 
         /// <summary>The styles on the band, in the order they sit in.</summary>
         public List<AnnotationStyle> Slots { get; }

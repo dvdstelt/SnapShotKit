@@ -36,6 +36,9 @@ public sealed class EditorWindow : Window
     readonly Stack<SnapshotDocument> redo = new();
     readonly ThumbnailCache thumbnails = new();
 
+    /// <summary>What the editor remembers between sessions, read once as the window opens.</summary>
+    readonly EditorState state = EditorState.Load();
+
     readonly MenuBar menu;
     readonly ToolBand band;
     readonly RecentStrip recent;
@@ -101,7 +104,7 @@ public sealed class EditorWindow : Window
         menu = new MenuBar("SnapShotKit");
         BuildMenus();
 
-        band = new ToolBand();
+        band = new ToolBand(state);
         WireBand();
 
         recent = new RecentStrip();

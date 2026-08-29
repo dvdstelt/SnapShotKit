@@ -96,7 +96,7 @@ What the band shows follows the selection when there is one and the tool otherwi
 
 The band leads with ready-made looks, one click each, and the settings that follow are what refine them. A look is the unit anyone actually works in: a red box with no fill, or white words on a black plate, is one decision, and reaching either through three controls in a row is three decisions where one was meant. Colour is not what they are for, since the palette beside them already changes a colour in one click; a style earns its place by combining things, and is offered in the few colours that combination is wanted in.
 
-Three of them sit on the band and the rest are in a gallery a click behind it, because the band has other work to do. The three are the ones used most recently, and one picked from the gallery takes the place of whichever of them has gone longest unused rather than pushing the row along: the hand learns where a style sits, and a row that reshuffled itself after every click would teach it nothing. Which three that leaves is remembered for as long as the window is open and no longer, since carrying it between sessions means a file to write and a thing to get wrong, for a row that costs one click to put back.
+Three of them sit on the band and the rest are in a gallery a click behind it, because the band has other work to do. The three are the ones used most recently, and one picked from the gallery takes the place of whichever of them has gone longest unused rather than pushing the row along: the hand learns where a style sits, and a row that reshuffled itself after every click would teach it nothing. Which three that leaves is remembered between sessions, by name rather than by position, so that adding a style or reordering the catalogue leaves everyone's band as they left it.
 
 The styles are prototype annotations rather than a table of values, and their previews are drawn by the renderer the canvas and the export use, so a preview cannot promise something the tool then does not do. A style is a complete look and sets everything it covers, including turning a fill or a plate off; changing any setting afterwards unmarks it, since the honest answer to "which of these am I wearing" is then none of them. Blur has no styles, because a style is a combination and blur has one thing to set.
 
@@ -160,7 +160,7 @@ Anything already drawn can be selected whatever tool is active. Requiring a swit
 |---|---|
 | `~/Pictures/snapshotkit/` | Exports. Images the user deliberately kept, and the only directory they are expected to browse. |
 | `~/.local/share/snapshotkit/snapshots/` | `.ssk` working documents. |
-| `~/.local/state/snapshotkit/` | Restore token, keybinding backup, and eventually the library index. |
+| `~/.local/state/snapshotkit/` | Restore token, keybinding backup, what the editor was last doing, and eventually the library index. |
 | `$XDG_RUNTIME_DIR/snapshotkit/` | The shared frame. tmpfs, so RAM, cleared on logout. |
 
 Snapshots sit in `XDG_DATA_HOME` rather than Pictures because they are application data, not photographs, and a folder full of them would bury the images the user actually wants. They are not cache either: a snapshot cannot be regenerated, so losing one loses work. Keeping them in an ordinary folder means anyone can open it and delete from it, and backups already cover it.
@@ -180,3 +180,5 @@ Three deliberate departures from the handoff, each for a reason worth keeping:
 Searching and tagging in the library are deferred rather than dropped. A search worth having looks inside documents for text drawn on a capture, which wants an index rather than several hundred archives opened per keystroke.
 
 The library index, when it exists, is a SQLite cache for search and thumbnails, rebuildable from the files and never the source of truth.
+
+That index is the only thing here that wants a database. What the editor remembers between sessions, which today is the styles on its band, is a small JSON file in the state directory: there is nothing in it to query and nothing relational, it is read once when a window opens and rewritten when a row changes, and a database would buy indexes and transactions it has no use for at the price of a dependency, a schema and its migrations. Nothing in it is important enough to interrupt anyone over either, so a file that cannot be read leaves the editor with its defaults and one that cannot be written leaves the session as it was.

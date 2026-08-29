@@ -72,7 +72,7 @@ public sealed class ToolBand : Border
 
     readonly TextBlock zoomLabel = Labels.Body("100%", 12.5, Tokens.Neutral800Brush);
 
-    public ToolBand()
+    public ToolBand(EditorState state)
     {
         Background = Tokens.BgBrush;
         BorderBrush = Tokens.DividerBrush;
@@ -100,7 +100,7 @@ public sealed class ToolBand : Border
         head = new Segmented(["Single", "Double"], index => DoubleHeadChosen?.Invoke(index == 1));
         fill = new Segmented(["None", "Solid"], index => FillChosen?.Invoke(index == 1));
 
-        style = new StyleField(chosen => StyleChosen?.Invoke(chosen));
+        style = new StyleField(state, chosen => StyleChosen?.Invoke(chosen));
 
         // Every group is captioned, the colours included. Without a caption the swatches sit at a
         // different height from everything beside them and the row reads as broken.
@@ -504,7 +504,7 @@ public sealed class ToolBand : Border
             ? selected.WearsStyle(candidate.Look)
             : defaults.Wears(candidate.Look));
 
-        style.Show(styles, worn);
+        style.Show(kind, styles, worn);
         styleGroup.IsVisible = styles.Count > 0;
 
         colourGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box or EditorTool.Text or EditorTool.Step;
