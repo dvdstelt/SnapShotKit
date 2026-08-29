@@ -824,9 +824,6 @@ public sealed class CanvasView : Decorator
     /// <summary>Nothing smaller than this, in image pixels. A canvas of nothing is not a canvas.</summary>
     const int MinimumCanvas = 16;
 
-    /// <summary>How much room to leave around the picture to drag into, as a fraction of its longer side.</summary>
-    const double FrameMargin = 0.1;
-
     /// <summary>How far either side of the boundary counts as grabbing it.</summary>
     const double EdgeReach = 10;
 
@@ -850,7 +847,7 @@ public sealed class CanvasView : Decorator
         Select(null);
 
         var proposed = CanvasRect();
-        resizing = new CanvasResize { Proposed = proposed, Frame = FrameAround(proposed) };
+        resizing = new CanvasResize { Proposed = proposed, Frame = FrameAround(proposed, CaptureRect()) };
 
         // Left for the first measure to work out, since it depends on the room available.
         sessionScale = 0;
@@ -859,12 +856,15 @@ public sealed class CanvasView : Decorator
         CanvasProposalChanged?.Invoke();
     }
 
-    /// <summary>The working surface for a proposal: everything it and the capture cover, with a margin around the pair.</summary>
-    Rect FrameAround(Rect proposed)
-    {
-        var union = proposed.Union(CaptureRect());
-        return union.Inflate(Math.Max(union.Width, union.Height) * FrameMargin);
-    }
+    /// <summary>
+    /// The working surface for a proposal: everything it and the capture cover, and nothing more.
+    ///
+    /// No room is kept back around the pair. Opening the mode would otherwise shrink the picture to
+    /// make space that is not needed yet, which reads as the editor having done something when all
+    /// that happened was a tool being picked. The room appears when it is called for, which is when
+    /// an edge is actually dragged outward, and the canvas grows into it.
+    /// </summary>
+    static Rect FrameAround(Rect proposed, Rect capture) => proposed.Union(capture);
 
     /// <summary>Leaves the mode. Whatever was proposed is dropped; only <see cref="ApplyCanvasResize"/> writes to the document.</summary>
     void CloseResize()
@@ -969,13 +969,12 @@ public sealed class CanvasView : Decorator
 
         session.Proposed = proposed;
 
-        // The working surface only ever grows while the mode lasts, and it grows in whole steps
-        // rather than by the pixel. Letting it shrink back would move the picture every time an
-        // edge came in, which is the one thing this mode exists to avoid.
-        if (!session.Frame.Contains(proposed))
-        {
-            session.Frame = session.Frame.Union(FrameAround(proposed));
-        }
+        // The surface follows the canvas, except while an edge is being dragged, when it may only
+        // grow. Letting it shrink mid-drag would move the picture the moment an edge came in, which
+        // is the one thing this mode exists to avoid; a drag that has finished settles it back.
+        session.Frame = canvasGrip == DragKind.None
+            ? FrameAround(proposed, CaptureRect())
+            : session.Frame.Union(proposed);
 
         // The bar is placed as the control is arranged, which the measure below leads to.
         CanvasProposalChanged?.Invoke();
@@ -1070,6 +1069,15 @@ public sealed class CanvasView : Decorator
         }
 
         canvasGrip = DragKind.None;
+
+        if (resizing is { } session)
+        {
+            // Back to the surface the canvas now calls for, at the scale that shows all of it. A
+            // canvas dragged out past the window is worth seeing whole the moment it is let go, and
+            // a drag that has ended is the one point where moving the picture costs nothing.
+            session.Frame = FrameAround(session.Proposed, CaptureRect());
+            sessionScale = 0;
+        }
 
         // Laid out normally again, which settles the working surface back into the middle of its
         // mat if a drag had pushed it off centre.
@@ -1340,13 +1348,18 @@ public sealed class CanvasView : Decorator
         context.DrawRectangle(null, BoundaryShadow, rect.Inflate(1));
         context.DrawRectangle(null, BoundaryPen, rect);
 
+        // Centred on the boundary where there is room, and tucked inside it where there is not. The
+        // surface is exactly the canvas until the canvas is grown, so at first the boundary is the
+        // control's own edge, and a grip straddling it would be sliced down the middle.
+        var grips = Inside(rect, target, HandleSize / 2);
+
         foreach (var grip in new[]
                  {
                      DragKind.RectTopLeft, DragKind.RectTop, DragKind.RectTopRight, DragKind.RectRight,
                      DragKind.RectBottomRight, DragKind.RectBottom, DragKind.RectBottomLeft, DragKind.RectLeft
                  })
         {
-            DrawHandle(context, AnchorOf(grip, rect));
+            DrawHandle(context, AnchorOf(grip, grips));
         }
     }
 
@@ -1613,6 +1626,17 @@ public sealed class CanvasView : Decorator
         {
             DrawHandle(context, point);
         }
+    }
+
+    /// <summary>A rectangle pushed in far enough from the edges of another to be drawn on whole.</summary>
+    static Rect Inside(Rect rect, Rect within, double reach)
+    {
+        var left = Math.Max(rect.X, within.X + reach);
+        var top = Math.Max(rect.Y, within.Y + reach);
+        var right = Math.Min(rect.Right, within.Right - reach);
+        var bottom = Math.Min(rect.Bottom, within.Bottom - reach);
+
+        return new Rect(left, top, Math.Max(right - left, 0), Math.Max(bottom - top, 0));
     }
 
     static void DrawHandle(DrawingContext context, Point at)
