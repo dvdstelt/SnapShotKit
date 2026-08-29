@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -21,6 +22,15 @@ public sealed class EditorWindow : Window
 {
     /// <summary>The strip holds a generous number; the library is one click away for the rest.</summary>
     const int RecentCount = 30;
+
+    /// <summary>
+    /// The zoom steps the buttons, the keys and the wheel move between.
+    ///
+    /// A ladder rather than a percentage a notch: the sizes worth having are few, and landing on
+    /// 100% exactly matters far more than being able to reach 87%. It stops at 200%, which is where
+    /// the canvas stops: past that you are looking at magnified pixels rather than at the picture.
+    /// </summary>
+    static readonly double[] ZoomStops = [0.1, 0.15, 0.25, 0.33, 0.5, 0.67, 1, 1.5, 2];
 
     readonly Stack<SnapshotDocument> undo = new();
     readonly Stack<SnapshotDocument> redo = new();
@@ -122,6 +132,10 @@ public sealed class EditorWindow : Window
         Content = layout;
 
         KeyDown += OnKeyDown;
+
+        // On the mat rather than on the picture, so the wheel zooms anywhere over the working area
+        // rather than only over whatever the picture happens to cover.
+        mat.AddHandler(InputElement.PointerWheelChangedEvent, OnWheel, RoutingStrategies.Tunnel);
 
         SetTool(EditorTool.Arrow);
         RefreshRecent();
@@ -232,7 +246,10 @@ public sealed class EditorWindow : Window
 
         menu.Add("View", () =>
         [
-            MenuEntry.Item("Fit to window", null, () => SetZoom(null)),
+            MenuEntry.Item("Zoom in", "Ctrl++", () => StepZoom(1)),
+            MenuEntry.Item("Zoom out", "Ctrl+-", () => StepZoom(-1)),
+            MenuEntry.Separator,
+            MenuEntry.Item("Fit to window", "Ctrl+0", () => SetZoom(null)),
             MenuEntry.Separator,
             MenuEntry.Item("50%", null, () => SetZoom(0.5)),
             MenuEntry.Item("100%", null, () => SetZoom(1)),
@@ -366,6 +383,9 @@ public sealed class EditorWindow : Window
         band.CanvasWidthChosen += width => canvas.ProposeCanvasSize(width, null);
         band.CanvasHeightChosen += height => canvas.ProposeCanvasSize(null, height);
         band.CanvasFitRequested += FitCanvasToCapture;
+
+        band.ZoomStepped += direction => StepZoom(direction);
+        band.ZoomFitRequested += () => SetZoom(null);
     }
 
     /// <summary>
@@ -471,7 +491,7 @@ public sealed class EditorWindow : Window
     /// scroll viewer offers infinite room in any direction it can scroll, and a canvas measured
     /// against infinity has nothing to fit to.
     /// </summary>
-    void SetZoom(double? zoom)
+    void SetZoom(double? zoom, Point? anchor = null)
     {
         var bars = zoom is null
             ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
@@ -480,8 +500,75 @@ public sealed class EditorWindow : Window
         scroller.HorizontalScrollBarVisibility = bars;
         scroller.VerticalScrollBarVisibility = bars;
 
+        // Which bit of the picture is under the anchor now, so that the same bit can be put back
+        // under it afterwards.
+        var held = anchor is { } point && scroller.TranslatePoint(point, canvas) is { } onCanvas
+            ? canvas.ToImagePoint(onCanvas)
+            : (Point?)null;
+
         canvas.Zoom = zoom;
         band.ShowZoom(zoom ?? canvas.EffectiveScale);
+
+        if (held is { } image && anchor is { } stay)
+        {
+            KeepUnderPointer(image, stay);
+        }
+    }
+
+    /// <summary>
+    /// Scrolls so that a point of the picture lands back under the pointer.
+    ///
+    /// Zooming about the middle of the viewport is the wrong answer for a screenshot: the thing
+    /// being looked at is under the pointer, which is exactly where it should still be afterwards.
+    /// </summary>
+    void KeepUnderPointer(Point image, Point anchor)
+    {
+        // The new size and the new scroll extent have to exist before anything can be measured
+        // against them, and the layout pass would otherwise not run until after this returns.
+        scroller.UpdateLayout();
+
+        if (canvas.TranslatePoint(canvas.ToViewPoint(image), scroller) is not { } landed)
+        {
+            return;
+        }
+
+        scroller.Offset += new Vector(landed.X - anchor.X, landed.Y - anchor.Y);
+    }
+
+    /// <summary>
+    /// Moves one rung up or down the ladder from wherever the picture is now.
+    ///
+    /// From the scale in use rather than from the last one asked for, so the first step out of
+    /// fitting goes to the nearest sensible size rather than jumping to whatever was set last.
+    /// </summary>
+    void StepZoom(int direction, Point? anchor = null)
+    {
+        var current = canvas.EffectiveScale;
+
+        var next = direction > 0
+            ? ZoomStops.FirstOrDefault(stop => stop > current + 0.001, ZoomStops[^1])
+            : ZoomStops.LastOrDefault(stop => stop < current - 0.001, ZoomStops[0]);
+
+        SetZoom(next, anchor);
+    }
+
+    /// <summary>
+    /// The wheel zooms about the pointer.
+    ///
+    /// Taken before the scroll viewer sees it, which is why the handler is tunnelled: the viewer
+    /// treats a wheel as a scroll and marks it handled, and a bubbling handler would never run.
+    /// Shift is left alone, so the viewer still has a wheel gesture of its own for panning across a
+    /// picture too big to fit.
+    /// </summary>
+    void OnWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) || e.Delta.Y == 0)
+        {
+            return;
+        }
+
+        StepZoom(e.Delta.Y > 0 ? 1 : -1, e.GetPosition(scroller));
+        e.Handled = true;
     }
 
     void SetTool(EditorTool selected)
@@ -891,6 +978,20 @@ public sealed class EditorWindow : Window
 
                 case Key.W:
                     Close();
+                    return;
+
+                // Both the key beside the digits and the one on the number pad, and both with and
+                // without shift: everyone reaches for a different one of these.
+                case Key.OemPlus or Key.Add:
+                    StepZoom(1);
+                    return;
+
+                case Key.OemMinus or Key.Subtract:
+                    StepZoom(-1);
+                    return;
+
+                case Key.D0 or Key.NumPad0:
+                    SetZoom(null);
                     return;
 
                 case Key.OemCloseBrackets:

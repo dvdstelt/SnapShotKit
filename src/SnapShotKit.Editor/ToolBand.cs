@@ -62,7 +62,7 @@ public sealed class ToolBand : Border
     readonly Control canvasHeightGroup;
     readonly Control canvasFitGroup;
 
-    readonly TextBlock zoomLabel;
+    readonly TextBlock zoomLabel = Labels.Body("100%", 12.5, Tokens.Neutral800Brush);
 
     public ToolBand()
     {
@@ -115,7 +115,6 @@ public sealed class ToolBand : Border
         canvasHeightGroup = Group("Height", heightBox);
         canvasFitGroup = Group("Canvas", TextAction("Fit to capture", () => CanvasFitRequested?.Invoke()));
 
-        zoomLabel = Labels.Body("100%", 12.5, Tokens.Neutral600Brush);
 
         var left = new StackPanel
         {
@@ -159,7 +158,7 @@ public sealed class ToolBand : Border
         right.Children.Add(TextAction("Undo", () => UndoRequested?.Invoke()));
         right.Children.Add(TextAction("Redo", () => RedoRequested?.Invoke()));
         right.Children.Add(Rule());
-        right.Children.Add(zoomLabel);
+        right.Children.Add(BuildZoom());
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(Tokens.Space.S4, 0) };
         Grid.SetColumn(left, 0);
@@ -182,6 +181,11 @@ public sealed class ToolBand : Border
     public event Action<string>? TextBackColourChosen;
     public event Action<int>? StepNumberChosen;
     public event Action<double>? StepSizeChosen;
+
+    /// <summary>A step up or down the zoom ladder: 1 in, -1 out.</summary>
+    public event Action<int>? ZoomStepped;
+
+    public event Action? ZoomFitRequested;
     public event Action<int>? CanvasWidthChosen;
     public event Action<int>? CanvasHeightChosen;
     public event Action? CanvasFitRequested;
@@ -339,6 +343,70 @@ public sealed class ToolBand : Border
         };
 
         return (frame, box);
+    }
+
+    /// <summary>
+    /// The zoom readout with a step either side of it.
+    ///
+    /// One framed object rather than three loose controls: they are one thing in the hand even
+    /// though they do three separate jobs, and the frame is the same one every other field on the
+    /// band wears. The number is a button too, because the thing most often wanted after zooming
+    /// in is the whole picture back.
+    /// </summary>
+    Control BuildZoom()
+    {
+        zoomLabel.VerticalAlignment = VerticalAlignment.Center;
+        zoomLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        zoomLabel.TextAlignment = TextAlignment.Center;
+        zoomLabel.MinWidth = 34;
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+
+        row.Children.Add(ZoomCell(
+            Lucide.Icon(Lucide.Minus, 14, Tokens.Neutral800Brush), "Zoom out  (Ctrl+-)", first: true,
+            () => ZoomStepped?.Invoke(-1)));
+
+        row.Children.Add(ZoomCell(zoomLabel, "Fit to window  (Ctrl+0)", first: false,
+            () => ZoomFitRequested?.Invoke()));
+
+        row.Children.Add(ZoomCell(
+            Lucide.Icon(Lucide.Plus, 14, Tokens.Neutral800Brush), "Zoom in  (Ctrl++)", first: false,
+            () => ZoomStepped?.Invoke(1)));
+
+        return new Border
+        {
+            Child = row,
+            Height = 28,
+            Background = Tokens.BgBrush,
+            BorderBrush = Tokens.DividerBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = Tokens.Radius,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+    }
+
+    /// <summary>One segment of the zoom control, ruled off from the one before it.</summary>
+    static Control ZoomCell(Control content, string tip, bool first, Action clicked)
+    {
+        var cell = new Border
+        {
+            Child = content,
+            Padding = new Thickness(Tokens.Space.S2, 0),
+            Background = Tokens.BgBrush,
+            CornerRadius = Tokens.Radius,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            // Internal rules between segments, drawn as the left edge of every one but the first.
+            BorderBrush = Tokens.DividerBrush,
+            BorderThickness = new Thickness(first ? 0 : 1, 0, 0, 0)
+        };
+
+        ToolTip.SetTip(cell, tip);
+
+        cell.PointerPressed += (_, _) => clicked();
+        cell.PointerEntered += (_, _) => cell.Background = Tokens.Neutral200Brush;
+        cell.PointerExited += (_, _) => cell.Background = Tokens.BgBrush;
+
+        return cell;
     }
 
     public void ShowZoom(double scale) => zoomLabel.Text = $"{scale * 100:F0}%";

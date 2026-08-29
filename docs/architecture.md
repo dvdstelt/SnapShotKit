@@ -132,6 +132,12 @@ The scale is frozen for the length of the mode and the working surface only ever
 
 Transparency is drawn as a chequerboard on the editing canvas and as nothing at all in an export, which is the same split as a blurred region's hairline edge. The affordance belongs to editing; the picture is the picture. JPEG has no alpha, so what would have been transparent is filled with white on the way out rather than arriving black.
 
+## Zoom
+
+The wheel zooms rather than scrolls, which is the opposite of the toolkit's default and is deliberate: a screenshot at fit is the normal state, and the reason to reach for the wheel over a picture is almost always to look closer at one part of it. It zooms about the pointer, since the thing being looked at is under the pointer and should still be there afterwards, which means a scroll offset worked out after the layout has caught up rather than a scale set and left. Shift and the wheel are left to the scroll viewer, so a picture too big for the window still has a wheel gesture that pans it.
+
+Zoom moves along a ladder rather than by a percentage a notch, for the buttons, the keys and the wheel alike. The sizes worth having are few, and landing on 100% exactly matters more than being able to reach 87%. It stops at 200%: past that the screen shows magnified pixels rather than the picture.
+
 Blur strength is stored 1 to 100 and squared into a gaussian sigma, not stored as sigma. Sigma is only interesting between roughly 0.5 and 8, so a linear slider spends its bottom on invisible changes and its top on a region that is already flat grey. Squaring puts fine control where small differences are visible and still reaches a full redaction at the end.
 
 A blurred region carries a hairline edge and a level caption on the canvas but not in an export. Both say where the object is and how hard it is blurred, which is editing chrome: an exported screenshot must not come out with a label printed across the thing being hidden. This is the one place where canvas and export deliberately differ, and it is limited to affordances, never to the picture.

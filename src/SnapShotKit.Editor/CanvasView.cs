@@ -324,7 +324,12 @@ public sealed class CanvasView : Decorator
 
             // A resize under way has its scale held still, and an explicit zoom is a deliberate
             // change of mind about it. Dropping the held value lets fitting be worked out afresh.
-            sessionScale = 0;
+            // Not mid-drag, though: the whole point of holding it is that an edge being dragged
+            // must not have the picture rescale under it.
+            if (canvasGrip == DragKind.None)
+            {
+                sessionScale = 0;
+            }
 
             InvalidateMeasure();
             InvalidateVisual();
@@ -431,6 +436,12 @@ public sealed class CanvasView : Decorator
     /// if they did, every click would land somewhere other than where it looks.
     /// </summary>
     Point Origin() => SnapshotRenderer.Origin(Area(), Target(), Scale);
+
+    /// <summary>Where a point on this control falls on the picture, in image pixels.</summary>
+    public Point ToImagePoint(Point view) => ToImage(view);
+
+    /// <summary>Where a point on the picture falls on this control. The other direction of the same map.</summary>
+    public Point ToViewPoint(Point image) => ToView(image.X, image.Y);
 
     /// <summary>An image-space rectangle where it lands on the control.</summary>
     Rect ViewRect(Rect image) => new(ToView(image.X, image.Y), ToView(image.Right, image.Bottom));
