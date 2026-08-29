@@ -44,6 +44,21 @@ public sealed class EditorWindow : Window
     readonly Panel canvasHost = new();
     readonly TextBlock status;
 
+    /// <summary>The mat's interior: the picture on its scroller, and the layer that floats over it.</summary>
+    readonly Panel matLayer = new();
+
+    /// <summary>
+    /// What floats over the mat, which today is only the bar that confirms a canvas resize.
+    ///
+    /// A canvas rather than an ordinary panel, because a canvas asks for no size of its own however
+    /// large or far out its children are placed. An ordinary panel hands its children's extent up
+    /// the tree, where it becomes a size the window has to satisfy: the bar would then push the
+    /// window wider, which would move the picture, which would move the bar.
+    /// </summary>
+    readonly Canvas floating = new();
+
+    readonly Border confirmBar;
+
     /// <summary>The framed working surface, kept because a canvas drag has to place it by hand for as long as it lasts.</summary>
     Blueprint framedCanvas;
 
@@ -93,13 +108,44 @@ public sealed class EditorWindow : Window
 
         scroller = new ScrollViewer { Content = canvasHost };
 
+        // The bar that applies or abandons a canvas resize. It lives on the mat rather than in the
+        // canvas, because the mat is the part of the window where nothing happens: a question about
+        // the picture must not be asked on top of the picture.
+        confirmBar = new Border
+        {
+            IsVisible = false,
+            Background = Tokens.BgBrush,
+            BorderBrush = Tokens.DividerBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = Tokens.Radius,
+            BoxShadow = Tokens.ShadowMd,
+            Padding = new Thickness(Tokens.Space.S2),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = Tokens.Space.S2,
+                Children =
+                {
+                    // Quiet answer first and the decisive one last, which is the order every other
+                    // question in this application is asked in.
+                    Buttons.Secondary("Cancel", null, () => canvas.CancelCanvasResize()),
+                    Buttons.Primary("Apply", null, () => canvas.ApplyCanvasResize())
+                }
+            }
+        };
+
+        floating.Children.Add(confirmBar);
+
+        matLayer.Children.Add(scroller);
+        matLayer.Children.Add(floating);
+
         // The capture sits on a mat as a framed object, the way the design treats every figure:
         // hairline border, registration marks, a shallow shadow to lift it off the ground.
         mat = new Border
         {
             Background = Tokens.Neutral200Brush,
             Padding = new Thickness(Tokens.Space.S8),
-            Child = scroller
+            Child = matLayer
         };
 
         framedCanvas = ShowCanvas();
@@ -201,6 +247,72 @@ public sealed class EditorWindow : Window
         framedCanvas.HorizontalAlignment = HorizontalAlignment.Center;
         framedCanvas.VerticalAlignment = VerticalAlignment.Center;
     }
+
+    /// <summary>The gap between the working surface and the bar that confirms it.</summary>
+    const double BarGap = 12;
+
+    /// <summary>
+    /// Puts the confirm bar on the mat, clear of the picture.
+    ///
+    /// Under the working surface where there is room for it, and beside or above it where there is
+    /// not: a tall capture leaves no room below and plenty either side. It never sits on the
+    /// picture, which is the whole reason it is here rather than inside the canvas.
+    ///
+    /// Called after every layout pass, so it follows the picture through a zoom, a resize of the
+    /// window and every step of a drag. It assigns only when the answer has changed, since a margin
+    /// set during layout starts another pass and would otherwise never settle.
+    /// </summary>
+    void PlaceConfirmBar()
+    {
+        confirmBar.IsVisible = canvas.IsResizingCanvas;
+
+        if (!confirmBar.IsVisible || canvas.TranslatePoint(default, floating) is not { } corner)
+        {
+            return;
+        }
+
+        var surface = new Rect(corner, canvas.Bounds.Size);
+        var bar = confirmBar.DesiredSize;
+        var room = new Rect(floating.Bounds.Size);
+
+        var middle = surface.Center.X - bar.Width / 2;
+        var centre = surface.Center.Y - bar.Height / 2;
+
+        var wanted = new[]
+        {
+            new Point(middle, surface.Bottom + BarGap),
+            new Point(middle, surface.Y - BarGap - bar.Height),
+            new Point(surface.Right + BarGap, centre),
+            new Point(surface.X - BarGap - bar.Width, centre)
+        };
+
+        var at = wanted.FirstOrDefault(candidate => room.Contains(new Rect(candidate, bar)));
+
+        // Nowhere on the mat is clear of the picture, which happens only when the picture fills it
+        // in both directions. Under the foot of the surface, held inside the mat.
+        if (at == default)
+        {
+            at = new Point(
+                Math.Clamp(middle, 0, Math.Max(room.Width - bar.Width, 0)),
+                Math.Clamp(surface.Bottom - bar.Height - BarGap, 0, Math.Max(room.Height - bar.Height, 0)));
+        }
+
+        // Only when it has actually moved. This runs after every layout pass, and a placement that
+        // asks for another pass every time it runs is a layout that never settles.
+        if (Moved(Canvas.GetLeft(confirmBar), at.X) || Moved(Canvas.GetTop(confirmBar), at.Y))
+        {
+            Canvas.SetLeft(confirmBar, at.X);
+            Canvas.SetTop(confirmBar, at.Y);
+        }
+    }
+
+    /// <summary>
+    /// Whether a coordinate wants setting.
+    ///
+    /// A canvas coordinate that has never been set reads as not-a-number, and every comparison with
+    /// that is false, including the one that would have noticed it needed a value.
+    /// </summary>
+    static bool Moved(double current, double wanted) => double.IsNaN(current) || Math.Abs(current - wanted) > 0.5;
 
     void BuildMenus()
     {
@@ -478,6 +590,7 @@ public sealed class EditorWindow : Window
         canvas.CanvasResizeMoved += MoveCanvas;
         canvas.CanvasResizeEnded += UnpinCanvas;
         canvas.CanvasProposalChanged += UpdateChrome;
+        canvas.LayoutUpdated += (_, _) => PlaceConfirmBar();
 
         // Dragging the picture to the right looks further left, which is what taking the movement
         // off the offset does.

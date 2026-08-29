@@ -143,10 +143,6 @@ public sealed class CanvasView : Decorator
     readonly Canvas editingLayer = new();
 
     TextBox? editor;
-
-    /// <summary>The bar that applies or abandons a canvas resize, shown only while one is on the table.</summary>
-    Border? confirmBar;
-
     TextAnnotation? editing;
     string? textBeforeEdit;
     bool editingIsNew;
@@ -443,11 +439,6 @@ public sealed class CanvasView : Decorator
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        // Before the layer is arranged, since that is when the canvas inside it reads the position
-        // this sets. Measured against the size being arranged rather than against Bounds, which
-        // still holds the previous pass's answer, and on the first pass holds nothing at all.
-        PlaceConfirmBar(finalSize);
-
         // The editing layer covers the whole picture; the editor inside it is placed by coordinate.
         Child?.Arrange(new Rect(finalSize));
 
@@ -506,12 +497,9 @@ public sealed class CanvasView : Decorator
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
-        // Clicks inside the editor, or on the bar that confirms a resize, belong to those: both are
-        // children of this control, so their presses bubble up here and would otherwise be read as
-        // drawing on the canvas or as grabbing its edge.
-        if (e.Source is Visual source
-            && ((editor is not null && editor.IsVisualAncestorOf(source))
-                || (confirmBar is not null && confirmBar.IsVisualAncestorOf(source))))
+        // Clicks inside the editor belong to the editor: it is a child of this control, so its
+        // presses bubble up here and would otherwise be read as drawing on the canvas.
+        if (editor is not null && e.Source is Visual source && editor.IsVisualAncestorOf(source))
         {
             return;
         }
@@ -830,9 +818,6 @@ public sealed class CanvasView : Decorator
     /// <summary>How far along the boundary from a corner still counts as the corner rather than the side.</summary>
     const double CornerReach = 24;
 
-    /// <summary>The gap between the canvas and the bar that confirms it.</summary>
-    const double BarGap = 10;
-
     public bool IsResizingCanvas => resizing is not null;
 
     /// <summary>The canvas as it is being shown: the proposal while one is on the table, the document's own otherwise.</summary>
@@ -852,7 +837,6 @@ public sealed class CanvasView : Decorator
         // Left for the first measure to work out, since it depends on the room available.
         sessionScale = 0;
 
-        ShowConfirmBar();
         CanvasProposalChanged?.Invoke();
     }
 
@@ -878,7 +862,6 @@ public sealed class CanvasView : Decorator
         canvasGrip = DragKind.None;
         sessionScale = 0;
 
-        HideConfirmBar();
         CanvasResizeEnded?.Invoke();
         CanvasProposalChanged?.Invoke();
     }
@@ -969,14 +952,12 @@ public sealed class CanvasView : Decorator
 
         session.Proposed = proposed;
 
-        // The surface follows the canvas, except while an edge is being dragged, when it may only
-        // grow. Letting it shrink mid-drag would move the picture the moment an edge came in, which
-        // is the one thing this mode exists to avoid; a drag that has finished settles it back.
-        session.Frame = canvasGrip == DragKind.None
-            ? FrameAround(proposed, CaptureRect())
-            : session.Frame.Union(proposed);
+        // The surface follows the canvas exactly, in both directions. Anything else leaves grey
+        // where the canvas has been but no longer is, which says "something was cropped here" about
+        // a place where nothing was. The picture still does not move: the window holds it where it
+        // is for the length of the drag, whichever way the surface is going.
+        session.Frame = FrameAround(proposed, CaptureRect());
 
-        // The bar is placed as the control is arranged, which the measure below leads to.
         CanvasProposalChanged?.Invoke();
 
         InvalidateMeasure();
@@ -1070,14 +1051,10 @@ public sealed class CanvasView : Decorator
 
         canvasGrip = DragKind.None;
 
-        if (resizing is { } session)
-        {
-            // Back to the surface the canvas now calls for, at the scale that shows all of it. A
-            // canvas dragged out past the window is worth seeing whole the moment it is let go, and
-            // a drag that has ended is the one point where moving the picture costs nothing.
-            session.Frame = FrameAround(session.Proposed, CaptureRect());
-            sessionScale = 0;
-        }
+        // Back to the scale that shows all of it. A canvas dragged out past the window is worth
+        // seeing whole the moment it is let go, and a drag that has ended is the one point where
+        // moving the picture costs nothing.
+        sessionScale = 0;
 
         // Laid out normally again, which settles the working surface back into the middle of its
         // mat if a drag had pushed it off centre.
@@ -1230,90 +1207,6 @@ public sealed class CanvasView : Decorator
             SourceRect = new RelativeRect(0, 0, tile, tile, RelativeUnit.Absolute),
             DestinationRect = new RelativeRect(0, 0, tile, tile, RelativeUnit.Absolute)
         };
-    }
-
-    /// <summary>
-    /// The bar that applies or abandons the resize.
-    ///
-    /// It floats under the canvas rather than living in the band, which is where this window puts
-    /// every other setting. The band is right for settings, which are always there; this is a
-    /// question with two answers, asked only while the mode is open and answered where the eye
-    /// already is. It goes the moment the mode does.
-    /// </summary>
-    void ShowConfirmBar()
-    {
-        if (confirmBar is not null)
-        {
-            return;
-        }
-
-        confirmBar = new Border
-        {
-            Background = SnapShotKit.Ui.Tokens.BgBrush,
-            BorderBrush = SnapShotKit.Ui.Tokens.DividerBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = SnapShotKit.Ui.Tokens.Radius,
-            BoxShadow = SnapShotKit.Ui.Tokens.ShadowMd,
-            Padding = new Thickness(SnapShotKit.Ui.Tokens.Space.S2),
-            Child = new StackPanel
-            {
-                Orientation = Avalonia.Layout.Orientation.Horizontal,
-                Spacing = SnapShotKit.Ui.Tokens.Space.S2,
-                Children =
-                {
-                    // Quiet first and decisive last, which is the order every other question in
-                    // this application is asked in.
-                    SnapShotKit.Ui.Buttons.Secondary("Cancel", null, CancelCanvasResize),
-                    SnapShotKit.Ui.Buttons.Primary("Apply", null, ApplyCanvasResize)
-                }
-            }
-        };
-
-        editingLayer.Children.Add(confirmBar);
-    }
-
-    void HideConfirmBar()
-    {
-        if (confirmBar is null)
-        {
-            return;
-        }
-
-        editingLayer.Children.Remove(confirmBar);
-        confirmBar = null;
-    }
-
-    /// <summary>Centres the bar under the canvas, or inside its foot when there is no room below it.</summary>
-    void PlaceConfirmBar(Size surface)
-    {
-        if (confirmBar is null || resizing is not { } session)
-        {
-            return;
-        }
-
-        var area = Area();
-        var scale = area.Width <= 0 ? 1 : surface.Width / area.Width;
-
-        var proposed = session.Proposed;
-        var rect = new Rect(
-            (proposed.X - area.X) * scale,
-            (proposed.Y - area.Y) * scale,
-            proposed.Width * scale,
-            proposed.Height * scale);
-
-        var size = confirmBar.DesiredSize;
-
-        // Below the canvas where there is room for it, and just inside the foot where there is not.
-        var top = rect.Bottom + BarGap;
-        if (top + size.Height > surface.Height)
-        {
-            top = rect.Bottom - size.Height - BarGap;
-        }
-
-        Canvas.SetLeft(confirmBar, Math.Clamp(
-            rect.Center.X - size.Width / 2, 0, Math.Max(surface.Width - size.Width, 0)));
-
-        Canvas.SetTop(confirmBar, Math.Clamp(top, 0, Math.Max(surface.Height - size.Height, 0)));
     }
 
     /// <summary>
