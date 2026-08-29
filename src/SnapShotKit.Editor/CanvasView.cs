@@ -51,10 +51,10 @@ public sealed class ToolDefaults
     public bool BoxFilled { get; set; }
 
     /// <summary>
-    /// The colour a filled box takes. Near-black by default: the usual reason to fill a box on a
+    /// The colour a filled box takes. Black by default: the usual reason to fill a box on a
     /// screenshot is to cover something up, and the border stays whatever colour it was.
     /// </summary>
-    public string BoxFillColor { get; set; } = "#2B2B2D";
+    public string BoxFillColor { get; set; } = "#000000";
 
     public int BlurStrength { get; set; } = 35;
 
@@ -64,7 +64,7 @@ public sealed class ToolDefaults
     /// <summary>Whether new text sits on a plate, kept apart from the colour so turning it off and on again remembers it.</summary>
     public bool TextBackgrounded { get; set; }
 
-    public string TextBackgroundColor { get; set; } = "#1D2D3D";
+    public string TextBackgroundColor { get; set; } = "#000000";
 
     public string TextColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
     public string TextFont { get; set; } = "Barlow, sans-serif";
@@ -127,8 +127,14 @@ public sealed class CanvasView : Decorator
     /// <summary>How far outside the object the dashed outline sits, so it never traces over the object's own stroke.</summary>
     const double SelectionOffset = 5;
 
-    /// <summary>Explicit zoom never goes past this. Beyond it you are looking at magnified pixels rather than the picture.</summary>
-    const double MaxZoom = 2;
+    /// <summary>
+    /// Explicit zoom never goes past this.
+    ///
+    /// Four hundred percent, because placing an arrow's tip or a blur's edge on a particular pixel
+    /// of a screenshot is a real thing to want, and at anything less the pixel is smaller than the
+    /// hand can aim at. Past it the screen is showing magnified pixels rather than the picture.
+    /// </summary>
+    const double MaxZoom = 4;
 
     readonly Snapshot snapshot;
     readonly BlurCache blurs;

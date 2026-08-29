@@ -27,10 +27,10 @@ public sealed class EditorWindow : Window
     /// The zoom steps the buttons, the keys and the wheel move between.
     ///
     /// A ladder rather than a percentage a notch: the sizes worth having are few, and landing on
-    /// 100% exactly matters far more than being able to reach 87%. It stops at 200%, which is where
-    /// the canvas stops: past that you are looking at magnified pixels rather than at the picture.
+    /// 100% exactly matters far more than being able to reach 87%. It stops at 400%, which is where
+    /// the canvas stops.
     /// </summary>
-    static readonly double[] ZoomStops = [0.1, 0.15, 0.25, 0.33, 0.5, 0.67, 1, 1.5, 2];
+    static readonly double[] ZoomStops = [0.1, 0.15, 0.25, 0.33, 0.5, 0.67, 1, 1.5, 2, 3, 4];
 
     readonly Stack<SnapshotDocument> undo = new();
     readonly Stack<SnapshotDocument> redo = new();
@@ -260,7 +260,8 @@ public sealed class EditorWindow : Window
             MenuEntry.Separator,
             MenuEntry.Item("50%", null, () => SetZoom(0.5)),
             MenuEntry.Item("100%", null, () => SetZoom(1)),
-            MenuEntry.Item("200%", null, () => SetZoom(2))
+            MenuEntry.Item("200%", null, () => SetZoom(2)),
+            MenuEntry.Item("400%", null, () => SetZoom(4))
         ]);
 
         menu.Add("Library", () =>
