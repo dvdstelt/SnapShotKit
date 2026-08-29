@@ -69,7 +69,7 @@ A `.ssk` file, for SnapShotKit snapshot, is a zip container in the manner of ODF
 
 ```
 snapshot-01.ssk  (zip)
-├── document.json     the canvas rectangle and the annotation objects, each with its own geometry
+├── document.json     the canvas rectangle, the bands cut out, and the annotation objects
 ├── original.png      the capture as taken, never modified
 └── meta.json         when it was taken, the source screen size, the region within it
 ```
@@ -139,6 +139,18 @@ Nothing reaches the document until the resize is applied, so the whole negotiati
 The surface follows the canvas exactly, both ways. Letting it keep the largest extent a drag had reached would leave grey where the canvas has been but no longer is, which says "something was cropped here" about a place where nothing was. The picture still does not move while an edge is dragged: the scale is frozen for the length of the drag, and the window places the surface by hand so that the capture stays exactly where it is on screen whichever way the boundary is going. A surface that refits as the canvas grows would take the picture out from under the pointer that is sizing it, and the drag would chase its own tail. Letting go returns the scale to whatever shows all of it, which is the one moment where moving the picture costs nothing.
 
 Transparency is drawn as a chequerboard on the editing canvas and as nothing at all in an export, which is the same split as a blurred region's hairline edge. The affordance belongs to editing; the picture is the picture. JPEG has no alpha, so what would have been transparent is filled with white on the way out rather than arriving black.
+
+## Cutting a band out
+
+A screenshot of a phone or a long page often has a stretch in the middle that nobody needs: a gap, a repeated header, half a screen of nothing. Dragging down the picture with the cut tool marks a band of rows and dragging across it marks a band of columns, and what is left closes up.
+
+It is geometry, not a pixel edit, for the same reason a crop is. `original.png` is never touched; the band goes into the document, and from then on the picture is drawn in pieces with that band skipped and everything after it shifted up or left by what the band took. Taking the cut back out puts the picture back exactly as it was.
+
+That leaves two coordinate systems, and the split is what keeps the cost down. Capture coordinates are what the document is written in and what every annotation is positioned against, and they never renumber, so making a cut moves nothing that was drawn. Laid coordinates are what ends up on screen and in the file, with the bands closed. Everything drawn goes one way through the mapping and everything pointed at comes back the other.
+
+Drawing a piece at a time is what makes a cut cost nothing anywhere else. Each piece is the whole picture drawn shifted and clipped to its own band, so a blur, an arrow or a line of text that happens to straddle a cut comes out as its two halves in the right places without any of them knowing that cuts exist. With nothing cut it is one piece with no shift, which is the same drawing as before any of this was added.
+
+The join is marked on the editing canvas while the tool is in hand, and nowhere else. A cut that has been made is simply a shorter picture, and a seam painted across an export would be the editor talking over the result.
 
 ## Zoom and panning
 

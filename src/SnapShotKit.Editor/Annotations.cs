@@ -267,6 +267,43 @@ public sealed class StepAnnotation : Annotation
 }
 
 /// <summary>
+/// Which way a cut runs, which is to say what it takes out of the picture.
+///
+/// Written out by name rather than as a number, for the same reason a colour is written as hex:
+/// the document is meant to be readable and diffable, and "1" says nothing about which way a band
+/// was cut.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CutAxis>))]
+public enum CutAxis
+{
+    /// <summary>A band across the picture, taking rows out of it, so what is left is shorter.</summary>
+    Rows,
+
+    /// <summary>A band down the picture, taking columns out of it, so what is left is narrower.</summary>
+    Columns
+}
+
+/// <summary>
+/// A band cut out of the picture, in capture pixels.
+///
+/// Not a pixel edit: the capture is drawn in pieces with this band skipped and everything after it
+/// closed up. Taking the band out of the document puts the picture back exactly as it was, which is
+/// the same promise every other kind of editing here makes.
+/// </summary>
+public sealed class CutBand
+{
+    public CutAxis Axis { get; set; }
+
+    /// <summary>Where the band starts, across or down the capture depending on the axis.</summary>
+    public double At { get; set; }
+
+    /// <summary>How much it takes.</summary>
+    public double Extent { get; set; }
+
+    public CutBand Copy() => new() { Axis = Axis, At = At, Extent = Extent };
+}
+
+/// <summary>
 /// The canvas: the rectangle that actually gets exported, expressed in image pixels.
 ///
 /// It is a rectangle rather than a size because it no longer has to coincide with the capture. The
@@ -297,8 +334,11 @@ public sealed class SnapshotDocument
     /// order of the layers, so that a blur could never hide an arrow. Version 2 draws the layers in
     /// the order they are in, which is what makes moving an object forward or back mean anything.
     /// A version 1 document is reordered as it is opened, so it still looks exactly as it did.
+    ///
+    /// Version 4 added the bands cut out of the picture. An older document has none, which is what
+    /// it meant, so there is nothing to fix up.
     /// </summary>
-    public const int Current = 3;
+    public const int Current = 4;
 
     public int Version { get; set; } = Current;
 
@@ -306,10 +346,20 @@ public sealed class SnapshotDocument
 
     public List<Annotation> Layers { get; set; } = [];
 
+    /// <summary>
+    /// The bands cut out of the picture, in capture pixels.
+    ///
+    /// Kept apart from the layers because a cut is not something drawn on the picture: it changes
+    /// where the picture is, which is why it belongs beside the canvas rather than among the things
+    /// standing on it.
+    /// </summary>
+    public List<CutBand> Cuts { get; set; } = [];
+
     public SnapshotDocument Copy() => new()
     {
         Version = Version,
         Canvas = new CanvasArea { X = Canvas.X, Y = Canvas.Y, Width = Canvas.Width, Height = Canvas.Height },
-        Layers = [.. Layers.Select(layer => layer.Copy())]
+        Layers = [.. Layers.Select(layer => layer.Copy())],
+        Cuts = [.. Cuts.Select(cut => cut.Copy())]
     };
 }

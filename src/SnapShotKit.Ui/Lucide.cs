@@ -69,6 +69,10 @@ public static class Lucide
     /// <summary>minus. Zooming out.</summary>
     public const string Minus = "M5,12 H19";
 
+    /// <summary>scissors. Cutting a band out of the picture.</summary>
+    public const string Cut = "M9,6 A3,3 0 1 1 3,6 A3,3 0 1 1 9,6 Z M8.12,8.12 L12,12 M20,4 L8.12,15.88 "
+        + "M9,18 A3,3 0 1 1 3,18 A3,3 0 1 1 9,18 Z M14.8,14.8 L20,20";
+
     /// <summary>crop. Resizing the canvas.</summary>
     public const string Crop = "M6,2 V16 A2,2 0 0 0 8,18 H22 M18,22 V8 A2,2 0 0 0 16,6 H2";
 

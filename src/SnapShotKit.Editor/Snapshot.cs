@@ -39,6 +39,20 @@ public sealed class Snapshot : IDisposable
     /// <summary>Carried through untouched so saving never discards what the daemon recorded.</summary>
     public string? Meta { get; }
 
+    /// <summary>
+    /// Where the picture ends up once its cuts are closed up.
+    ///
+    /// Worked out from the document and kept until the cuts change, because it is asked for on
+    /// every repaint and every pointer movement, and walking the bands to build it each time would
+    /// be work done thousands of times for an answer that changes when somebody makes a cut.
+    /// </summary>
+    public CutLayout Layout => layout ??= new CutLayout(Document.Cuts);
+
+    CutLayout? layout;
+
+    /// <summary>Called when the cuts have changed, so the layout is worked out again.</summary>
+    public void Recut() => layout = null;
+
     public static Snapshot Open(string path)
     {
         using var archive = ZipFile.OpenRead(path);
@@ -81,7 +95,8 @@ public sealed class Snapshot : IDisposable
     ///
     /// Version 3 gave the canvas an offset, so that it can be cropped in past the capture or pushed
     /// out beyond it. An older document has no offset, and zero is exactly what it meant: the canvas
-    /// was the capture. That needs no fix-up, only the version.
+    /// was the capture. Version 4 added the bands cut out of the picture, and an older document has
+    /// none. Neither needs a fix-up, only the version.
     /// </summary>
     static void Migrate(SnapshotDocument document)
     {

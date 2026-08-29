@@ -237,7 +237,8 @@ public sealed class ToolBand : Border
                      (EditorTool.Blur, Lucide.Blur, "Blur  (L)"),
                      (EditorTool.Step, Lucide.Step, "Numbered marker  (N)\nEach one takes the next number up."),
                      (EditorTool.Text, Lucide.Text, "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
-                     (EditorTool.Canvas, Lucide.Crop, "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out.")
+                     (EditorTool.Canvas, Lucide.Crop, "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out."),
+                     (EditorTool.Cut, Lucide.Cut, "Cut out  (X)\nDrag down the picture to take a band of rows out of it, or across to take columns.\nWhat is left closes up.")
                  })
         {
             var icon = Lucide.Icon(glyph, 17, Tokens.Neutral800Brush);

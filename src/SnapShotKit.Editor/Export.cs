@@ -35,12 +35,20 @@ public static class Export
     static RenderTargetBitmap Render(Snapshot snapshot, BlurCache blurs)
     {
         var canvas = snapshot.Document.Canvas;
-        var rendered = new RenderTargetBitmap(new PixelSize(canvas.Width, canvas.Height), new Vector(96, 96));
+
+        // The canvas with its cuts closed up, which is what the file actually comes out as: a band
+        // taken out of the middle makes the picture shorter, and the export is the picture.
+        var area = snapshot.Layout.ToLaid(new Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height));
+
+        var size = new PixelSize(
+            Math.Max((int)Math.Round(area.Width), 1),
+            Math.Max((int)Math.Round(area.Height), 1));
+
+        var rendered = new RenderTargetBitmap(size, new Vector(96, 96));
 
         using (var context = rendered.CreateDrawingContext())
         {
-            var area = new Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height);
-            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, canvas.Width, canvas.Height), area);
+            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, size.Width, size.Height), area);
         }
 
         return rendered;

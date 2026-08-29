@@ -30,9 +30,9 @@ public static class SnapshotRenderer
     }
 
     /// <param name="area">
-    /// The stretch of image space being drawn, in image pixels. Usually the canvas, which is what
-    /// gets exported. The editor passes something larger while the canvas is being resized, so that
-    /// what falls outside it can be seen rather than guessed at.
+    /// The stretch of laid-out space being drawn, in image pixels with the cuts already closed.
+    /// Usually the canvas, which is what gets exported. The editor passes something larger while the
+    /// canvas is being resized, so that what falls outside it can be seen rather than guessed at.
     /// </param>
     /// <param name="target">Where that stretch lands.</param>
     /// <param name="suppress">
@@ -46,9 +46,40 @@ public static class SnapshotRenderer
 
         // Everything drawn on a snapshot is positioned against the capture's top-left corner rather
         // than the canvas's, so that cropping the canvas in or pushing it out moves nothing that was
-        // drawn on it. This is where that corner falls on the target.
+        // drawn on it. This is where that corner falls on the target, before any cut moves it.
         var origin = Origin(area, target, scale);
 
+        // A piece at a time, each one the whole picture drawn shifted by what the cuts before it
+        // took and clipped to its own band. With nothing cut that is one piece, no shift and a clip
+        // around everything, which is the same drawing as before cuts existed.
+        var layout = snapshot.Layout;
+
+        foreach (var (piece, shift) in layout.Pieces(layout.ToCapture(area)))
+        {
+            var laid = new Rect(piece.X - shift.X, piece.Y - shift.Y, piece.Width, piece.Height);
+
+            var within = new Rect(
+                origin.X + laid.X * scale,
+                origin.Y + laid.Y * scale,
+                laid.Width * scale,
+                laid.Height * scale);
+
+            if (within.Width <= 0 || within.Height <= 0)
+            {
+                continue;
+            }
+
+            using (context.PushClip(within))
+            {
+                DrawPiece(context, snapshot, blurs, origin - shift * scale, scale, suppress);
+            }
+        }
+    }
+
+    /// <summary>The capture and everything on it, positioned in capture pixels from a given corner.</summary>
+    static void DrawPiece(DrawingContext context, Snapshot snapshot, BlurCache blurs, Point origin, double scale,
+        Annotation? suppress)
+    {
         // The capture at its own size, wherever the canvas sits around it. Whatever the canvas
         // covers beyond the capture is simply not painted, which is what makes it transparent.
         context.DrawImage(snapshot.Bitmap, new Rect(origin, new Size(

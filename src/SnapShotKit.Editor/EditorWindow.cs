@@ -348,6 +348,9 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Resize canvas", "C", () => SetTool(EditorTool.Canvas)),
             MenuEntry.Item("Fit canvas to capture", null, FitCanvasToCapture),
             MenuEntry.Separator,
+            MenuEntry.Item("Cut out a band", "X", () => SetTool(EditorTool.Cut)),
+            MenuEntry.Item("Put every cut back", null, () => canvas.UncutAll()),
+            MenuEntry.Separator,
             MenuEntry.Item("Bring to front", "Ctrl+Shift+]", () => Arrange(Order.Front)),
             MenuEntry.Item("Bring forward", "Ctrl+]", () => Arrange(Order.Forward)),
             MenuEntry.Item("Send backward", "Ctrl+[", () => Arrange(Order.Backward)),
@@ -805,9 +808,11 @@ public sealed class EditorWindow : Window
         snapshot.Document.Layers.Clear();
         snapshot.Document.Layers.AddRange(previous.Layers);
 
-        // The canvas is part of the document too. Restoring only the layers would undo a crop by
-        // leaving the crop in place.
+        // The canvas and the cuts are part of the document too. Restoring only the layers would
+        // undo a crop by leaving the crop in place, and a cut by leaving the band cut out.
         snapshot.Document.Canvas = previous.Canvas;
+        snapshot.Document.Cuts = previous.Cuts;
+        snapshot.Recut();
 
         lastBandEdit = null;
         dirty = true;
@@ -1017,7 +1022,7 @@ public sealed class EditorWindow : Window
         // The canvas being proposed while one is being resized, and the document's own otherwise:
         // the readouts follow what is on screen, which is what the user is working on.
         var size = canvas.ShownCanvas;
-        band.ShowCanvasSize((int)size.Width, (int)size.Height);
+        band.ShowCanvasSize((int)canvas.ShownCanvasLaid.Width, (int)canvas.ShownCanvasLaid.Height);
 
         var selection = canvas.Selected switch
         {
@@ -1029,14 +1034,24 @@ public sealed class EditorWindow : Window
             _ => "nothing selected"
         };
 
-        // The capture's own size is worth saying only once the canvas has stopped matching it,
-        // which is exactly when "1920 × 1080" on its own would be ambiguous.
+        // What the file would come out as, which is the canvas with its cuts closed up. The
+        // capture's own size is worth saying only once that has stopped matching it, which is
+        // exactly when "1920 × 1080" on its own would be ambiguous.
         var capture = snapshot.Bitmap.PixelSize;
-        var dimensions = size == new Rect(0, 0, capture.Width, capture.Height)
-            ? $"{size.Width} × {size.Height}"
-            : $"{size.Width} × {size.Height} canvas on a {capture.Width} × {capture.Height} capture";
+        var laid = snapshot.Layout.ToLaid(size);
 
-        status.Text = $"{dimensions}   ·   {snapshot.Document.Layers.Count} object(s)   ·   {selection}";
+        var dimensions = laid == new Rect(0, 0, capture.Width, capture.Height)
+            ? $"{laid.Width} × {laid.Height}"
+            : $"{laid.Width} × {laid.Height} canvas on a {capture.Width} × {capture.Height} capture";
+
+        var cuts = snapshot.Document.Cuts.Count switch
+        {
+            0 => string.Empty,
+            1 => "   ·   1 cut",
+            var many => $"   ·   {many} cuts"
+        };
+
+        status.Text = $"{dimensions}{cuts}   ·   {snapshot.Document.Layers.Count} object(s)   ·   {selection}";
     }
 
     /// <summary>Where in the stacking order to move something.</summary>
@@ -1255,6 +1270,10 @@ public sealed class EditorWindow : Window
 
             case Key.C:
                 SetTool(EditorTool.Canvas);
+                break;
+
+            case Key.X:
+                SetTool(EditorTool.Cut);
                 break;
         }
     }
