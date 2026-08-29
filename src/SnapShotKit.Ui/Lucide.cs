@@ -60,6 +60,9 @@ public static class Lucide
     /// <summary>circle with a one in it. The numbered marker, drawn rather than taken from the set, which has no numbered disc.</summary>
     public const string Step = "M12,3 A9,9 0 1 1 11.9,3 Z M10.6,9.6 L12.6,8.4 L12.6,15.6 M10.6,15.6 L14.6,15.6";
 
+    /// <summary>chevron-down. Opens what is behind a control, such as the rest of a gallery.</summary>
+    public const string More = "M6,9 L12,15 L18,9";
+
     /// <summary>plus. Zooming in.</summary>
     public const string Plus = "M5,12 H19 M12,5 V19";
 
