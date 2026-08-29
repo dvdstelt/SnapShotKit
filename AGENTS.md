@@ -114,6 +114,33 @@ The same theme also claims keys. A text box with `AcceptsReturn` marks Enter han
 - The descriptor from `OpenPipeWireRemote` is duplicated before use. The D-Bus message still owns the original, and `dup` also clears close-on-exec so the helper inherits it.
 - The ScreenCast portal only returns a `restore_token` if the user ticked the remember box in the consent dialog. Without it `Start` still succeeds and simply omits the key, and the next run prompts again. Read the token before any parsing that can throw, or a granted consent is thrown away.
 
+## Avalonia rules that are easy to get wrong
+
+None of these fail at the compiler. Each one showed up as a window doing something strange, or as a crash a long way from its cause.
+
+- **A control's desired size becomes a size the window has to satisfy.** Anything placed by margin or alignment hands its extent up the tree, and a window whose content asks for more room than it has grows to fit. Anything meant to float over the picture therefore belongs on a `Canvas` layer, which asks for no size of its own however far out its children are put. The symptom is a window that resizes itself, or `InvalidOperationException: Infinite layout loop detected` when the growth moves the very thing that caused it. The editor window still does this to itself about eleven seconds after opening, with nothing clicked: it jumps from 1180x740 to 2866x1371, and 2812 of that is about what the recent strip's tiles come to laid out end to end. That one is not fixed.
+- **`Canvas.GetLeft` and `Canvas.GetTop` return `NaN` until they are set**, and every comparison against `NaN` is false, including the one meant to notice that the value was missing. A guard of the form `Math.Abs(current - wanted) > 0.5` therefore never fires the first time, and the control sits in the corner looking like a layout bug.
+- **`Bounds` inside `ArrangeOverride` holds the previous pass's answer**, and on the first pass holds nothing at all. Measure against the size being arranged.
+- **`LayoutUpdated` fires after every layout pass, on every control.** It is the right hook for keeping something pinned to a control that moves, but whatever it sets must be assigned only when the value has actually changed, or the layout never settles.
+- **`ScrollViewer` reads a wheel as a scroll and marks it handled**, so a handler added with `+=` never runs. Tunnel to get in ahead of it, and leave the modifiers it still needs alone.
+- **Releasing pointer capture with `Capture(null)` reports capture lost synchronously.** Anything that ends a drag has to be safe to call twice, and in either order.
+- **The stock Fluent theme wins over properties set on the control**, because it sets them on the template's presenter instead. That is what `Buttons.Bare`, `TextFields.Bare`, `Slide` and `ColourPicker` exist for; see the design system section above.
+
+## Checking the interface
+
+The editor draws through XWayland, so its window can be found and photographed from a script:
+
+```bash
+WID=$(xdotool search --all --pid $PID --name "SnapShotKit" | head -1)
+import -window "$WID" shot.png
+```
+
+`--all` is not optional. `xdotool search` ORs its criteria without it, so a search by process and name will cheerfully hand back somebody else's window, and the screenshot will look like a bug that is not there.
+
+Input cannot be synthesised at all. `xdotool key` and `xdotool mousemove` are ignored under GNOME Wayland: the pointer does not move and the key never arrives, silently. To check a gesture, drive the handler it ends in behind a temporary environment variable and a dispatcher timer, photograph the result, and take the scaffolding out again.
+
+Anything that ends up in the picture rather than around it is cheaper to check through `--export`, which renders without showing a window and can be compared pixel for pixel against a known-good file.
+
 ## Tmds.DBus.Protocol rules that are easy to get wrong
 
 - One D-Bus connection per process. A second one is enough to break PipeWire capture, and opening it before PipeWire makes libpipewire abort outright.

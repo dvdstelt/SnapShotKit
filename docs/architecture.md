@@ -134,7 +134,7 @@ The surface follows the canvas exactly, both ways. Letting it keep the largest e
 
 Transparency is drawn as a chequerboard on the editing canvas and as nothing at all in an export, which is the same split as a blurred region's hairline edge. The affordance belongs to editing; the picture is the picture. JPEG has no alpha, so what would have been transparent is filled with white on the way out rather than arriving black.
 
-## Zoom
+## Zoom and panning
 
 The wheel zooms rather than scrolls, which is the opposite of the toolkit's default and is deliberate: a screenshot at fit is the normal state, and the reason to reach for the wheel over a picture is almost always to look closer at one part of it. It zooms about the pointer, since the thing being looked at is under the pointer and should still be there afterwards, which means a scroll offset worked out after the layout has caught up rather than a scale set and left. Shift and the wheel are left to the scroll viewer, so a picture too big for the window still has a wheel gesture that pans it.
 
