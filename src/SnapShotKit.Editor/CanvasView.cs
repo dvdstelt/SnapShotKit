@@ -166,6 +166,12 @@ public sealed class CanvasView : Decorator
     /// <summary>The resize being negotiated, or null when the canvas tool is not in hand.</summary>
     CanvasResize? resizing;
 
+    /// <summary>Whether the picture is being dragged about, as opposed to merely being ready to be.</summary>
+    bool grabbed;
+
+    /// <summary>Where the pointer was, in the window's own coordinates, at the last step of a pan.</summary>
+    Point panOrigin;
+
     /// <summary>
     /// Which edge of the canvas is being dragged, or None.
     ///
@@ -234,6 +240,38 @@ public sealed class CanvasView : Decorator
             InvalidateVisual();
         }
     } = EditorTool.Select;
+
+    /// <summary>
+    /// Whether the space bar is held.
+    ///
+    /// It turns every tool into a hand for as long as it is down: the picture is moved about rather
+    /// than drawn on. This is the gesture every editor with a canvas larger than its window has, and
+    /// it is worth having for the same reason they all do, which is that reaching for a scroll bar
+    /// to nudge a picture along is a poor way to look at one.
+    /// </summary>
+    public bool Panning
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+
+            field = value;
+
+            if (!value)
+            {
+                grabbed = false;
+            }
+
+            ShowCursor();
+        }
+    }
+
+    /// <summary>How far the pointer has moved since the last step of a pan, in the window's coordinates.</summary>
+    public event Action<Vector>? Panned;
 
     public Annotation? Selected { get; private set; }
 
@@ -477,6 +515,17 @@ public sealed class CanvasView : Decorator
 
         Focus();
 
+        // With space held the press takes hold of the picture rather than of anything on it.
+        if (Panning)
+        {
+            grabbed = true;
+            panOrigin = e.GetPosition(null);
+
+            e.Pointer.Capture(this);
+            ShowCursor();
+            return;
+        }
+
         var view = e.GetPosition(this);
         var image = ToImage(view);
         dragOrigin = image;
@@ -615,6 +664,23 @@ public sealed class CanvasView : Decorator
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
+        if (grabbed)
+        {
+            // Measured against the window rather than against this control, which is itself being
+            // scrolled by the very movement being measured. Step by step rather than from where the
+            // drag began, so that a pan run into the end of the picture and back does not have to
+            // work off a distance the picture never travelled.
+            var now = e.GetPosition(null);
+            Panned?.Invoke(now - panOrigin);
+            panOrigin = now;
+            return;
+        }
+
+        if (Panning)
+        {
+            return;
+        }
+
         if (canvasGrip != DragKind.None)
         {
             ResizeCanvas(ToImage(e.GetPosition(this)) - grabOffset);
@@ -623,25 +689,7 @@ public sealed class CanvasView : Decorator
 
         if (dragging == DragKind.None)
         {
-            var over = e.GetPosition(this);
-
-            if (resizing is { } session)
-            {
-                var grip = HitCanvasEdge(over, session);
-
-                Cursor = new Cursor(grip != DragKind.None ? CursorFor(grip)
-                    : ViewRect(session.Proposed).Contains(over) ? StandardCursorType.SizeAll
-                    : StandardCursorType.Arrow);
-
-                return;
-            }
-
-            Cursor = new Cursor(
-                HitHandle(over) != DragKind.None ? StandardCursorType.SizeAll
-                : HitTest(ToImage(over)) is not null ? StandardCursorType.Hand
-                : Tool == EditorTool.Select ? StandardCursorType.Arrow
-                : StandardCursorType.Cross);
-
+            ShowCursor(e.GetPosition(this));
             return;
         }
 
@@ -1027,6 +1075,12 @@ public sealed class CanvasView : Decorator
 
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
+        if (grabbed)
+        {
+            grabbed = false;
+            ShowCursor();
+        }
+
         EndCanvasDrag();
         base.OnPointerCaptureLost(e);
     }
@@ -1071,6 +1125,46 @@ public sealed class CanvasView : Decorator
             (0, 1) => DragKind.RectBottom,
             _ => DragKind.None
         };
+    }
+
+    /// <summary>
+    /// The cursor for what the pointer is over, or for the mode the editor is in.
+    ///
+    /// Called on movement, where the position is known, and on a change of mode, where it is not:
+    /// a hand has to appear the moment space goes down rather than on the next twitch of the mouse.
+    /// </summary>
+    void ShowCursor(Point? over = null)
+    {
+        if (Panning)
+        {
+            // An open hand while it is only ready, and the move cursor while it actually has hold
+            // of the picture. The toolkit offers no closed hand of its own.
+            Cursor = new Cursor(grabbed ? StandardCursorType.SizeAll : StandardCursorType.Hand);
+            return;
+        }
+
+        if (over is not { } point)
+        {
+            Cursor = new Cursor(Tool == EditorTool.Select ? StandardCursorType.Arrow : StandardCursorType.Cross);
+            return;
+        }
+
+        if (resizing is { } session)
+        {
+            var grip = HitCanvasEdge(point, session);
+
+            Cursor = new Cursor(grip != DragKind.None ? CursorFor(grip)
+                : ViewRect(session.Proposed).Contains(point) ? StandardCursorType.SizeAll
+                : StandardCursorType.Arrow);
+
+            return;
+        }
+
+        Cursor = new Cursor(
+            HitHandle(point) != DragKind.None ? StandardCursorType.SizeAll
+            : HitTest(ToImage(point)) is not null ? StandardCursorType.Hand
+            : Tool == EditorTool.Select ? StandardCursorType.Arrow
+            : StandardCursorType.Cross);
     }
 
     static StandardCursorType CursorFor(DragKind grip) => grip switch
@@ -1252,6 +1346,14 @@ public sealed class CanvasView : Decorator
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (grabbed)
+        {
+            grabbed = false;
+            e.Pointer.Capture(null);
+            ShowCursor();
+            return;
+        }
+
         if (canvasGrip != DragKind.None)
         {
             // Letting the capture go is itself reported as capture lost, which is where the drag

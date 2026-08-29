@@ -132,6 +132,11 @@ public sealed class EditorWindow : Window
         Content = layout;
 
         KeyDown += OnKeyDown;
+        KeyUp += OnKeyUp;
+
+        // A held key whose window goes away never reports being let go, and a hand left holding the
+        // picture would then take the next click.
+        Deactivated += (_, _) => canvas.Panning = false;
 
         // On the mat rather than on the picture, so the wheel zooms anywhere over the working area
         // rather than only over whatever the picture happens to cover.
@@ -250,6 +255,8 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Zoom out", "Ctrl+-", () => StepZoom(-1)),
             MenuEntry.Separator,
             MenuEntry.Item("Fit to window", "Ctrl+0", () => SetZoom(null)),
+            MenuEntry.Separator,
+            MenuEntry.Item("Move the picture", "Space and drag", () => { }),
             MenuEntry.Separator,
             MenuEntry.Item("50%", null, () => SetZoom(0.5)),
             MenuEntry.Item("100%", null, () => SetZoom(1)),
@@ -470,6 +477,10 @@ public sealed class EditorWindow : Window
         canvas.CanvasResizeMoved += MoveCanvas;
         canvas.CanvasResizeEnded += UnpinCanvas;
         canvas.CanvasProposalChanged += UpdateChrome;
+
+        // Dragging the picture to the right looks further left, which is what taking the movement
+        // off the offset does.
+        canvas.Panned += delta => scroller.Offset -= delta;
 
         // Applied or abandoned, the mode is done with. Select is where it hands back to, since the
         // thing just resized is the picture rather than anything on it.
@@ -939,6 +950,14 @@ public sealed class EditorWindow : Window
         }
     }
 
+    void OnKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Space)
+        {
+            canvas.Panning = false;
+        }
+    }
+
     void OnKeyDown(object? sender, KeyEventArgs e)
     {
         var control = e.KeyModifiers.HasFlag(KeyModifiers.Control);
@@ -1032,6 +1051,15 @@ public sealed class EditorWindow : Window
                 canvas.CancelCanvasResize();
             }
 
+            e.Handled = true;
+            return;
+        }
+
+        // Held, not pressed: space is a mode for as long as it is down, and the key repeats while
+        // it is, so entering the mode twice has to cost nothing.
+        if (e.Key == Key.Space)
+        {
+            canvas.Panning = true;
             e.Handled = true;
             return;
         }
