@@ -18,6 +18,11 @@ namespace SnapShotKit.Editor;
 /// Every setting offers a handful of presets and a way to reach any other value. The presets carry
 /// almost all of the use; being unable to reach the one value that is not on the list is the kind
 /// of limit that makes a tool feel like a toy.
+///
+/// The row of styles leads them, because a look is the unit anyone actually works in: a red box
+/// with no fill is one decision, not three controls in a row. The settings after it are for the
+/// times the answer is not on the list, and they say what they are set to whether it came from a
+/// style or from them.
 /// </summary>
 public sealed class ToolBand : Border
 {
@@ -44,9 +49,12 @@ public sealed class ToolBand : Border
     readonly Segmented head;
     readonly Segmented fill;
 
+    readonly StyleField style;
+
     readonly TextBox canvasWidth;
     readonly TextBox canvasHeight;
 
+    readonly Control styleGroup;
     readonly Control colourGroup;
     readonly Control fillColourGroup;
     readonly Control textBackGroup;
@@ -92,8 +100,11 @@ public sealed class ToolBand : Border
         head = new Segmented(["Single", "Double"], index => DoubleHeadChosen?.Invoke(index == 1));
         fill = new Segmented(["None", "Solid"], index => FillChosen?.Invoke(index == 1));
 
+        style = new StyleField(chosen => StyleChosen?.Invoke(chosen));
+
         // Every group is captioned, the colours included. Without a caption the swatches sit at a
         // different height from everything beside them and the row reads as broken.
+        styleGroup = Group("Style", style);
         colourGroup = Group("Colour", colour);
         fillColourGroup = Group("Fill colour", fillColour);
         weightGroup = Group("Weight", weight);
@@ -116,15 +127,6 @@ public sealed class ToolBand : Border
         canvasFitGroup = Group("Canvas", TextAction("Fit to capture", () => CanvasFitRequested?.Invoke()));
 
 
-        var left = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = Tokens.Space.S4,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        left.Children.Add(BuildToolCells());
-        left.Children.Add(Rule());
 
         // Every settings group lives in this one strip, in a fixed order. Only the ones the active
         // tool uses are visible; the rest collapse, and the ones that remain do not move.
@@ -137,7 +139,7 @@ public sealed class ToolBand : Border
 
         foreach (var group in new[]
                  {
-                     colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
+                     styleGroup, colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
                      headGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
                      canvasWidthGroup, canvasHeightGroup, canvasFitGroup
                  })
@@ -145,7 +147,35 @@ public sealed class ToolBand : Border
             settings.Children.Add(group);
         }
 
-        left.Children.Add(settings);
+        // The settings take whatever room the tools leave, and scroll within it when a tool has
+        // more of them than the window is wide. A scroll bar would eat into a band whose height is
+        // fixed, so there is none: the wheel moves it, and at any comfortable width it never moves
+        // at all. Without this the groups are laid out past the end of the band and drawn over the
+        // controls sharing it.
+        var strip = new ScrollViewer
+        {
+            Content = settings,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        // A dock panel rather than a row: a horizontal stack offers its children all the room in
+        // the world, and a scroller offered infinite room never scrolls.
+        var left = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
+
+        var tools = BuildToolCells();
+        var rule = Rule();
+
+        DockPanel.SetDock(tools, Dock.Left);
+        DockPanel.SetDock(rule, Dock.Left);
+
+        rule.Margin = new Thickness(Tokens.Space.S4, 0);
+        strip.Margin = new Thickness(Tokens.Space.S4, 0, 0, 0);
+
+        left.Children.Add(tools);
+        left.Children.Add(rule);
+        left.Children.Add(strip);
 
         var right = new StackPanel
         {
@@ -186,6 +216,9 @@ public sealed class ToolBand : Border
     public event Action<int>? ZoomStepped;
 
     public event Action? ZoomFitRequested;
+    /// <summary>A whole look, chosen in one go.</summary>
+    public event Action<AnnotationStyle>? StyleChosen;
+
     public event Action<int>? CanvasWidthChosen;
     public event Action<int>? CanvasHeightChosen;
     public event Action? CanvasFitRequested;
@@ -462,6 +495,17 @@ public sealed class ToolBand : Border
             StepAnnotation => EditorTool.Step,
             _ => tool
         };
+
+        // The styles on offer follow the kind, and the one marked is whichever the selection or the
+        // tool is already wearing. Changing a single setting away from a style unmarks it rather
+        // than leaving the row claiming a look that is no longer being worn.
+        var styles = AnnotationStyles.For(kind);
+        var worn = styles.FirstOrDefault(candidate => selected is not null
+            ? selected.WearsStyle(candidate.Look)
+            : defaults.Wears(candidate.Look));
+
+        style.Show(styles, worn);
+        styleGroup.IsVisible = styles.Count > 0;
 
         colourGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box or EditorTool.Text or EditorTool.Step;
         weightGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box;

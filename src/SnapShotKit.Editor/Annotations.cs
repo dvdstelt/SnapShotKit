@@ -20,6 +20,20 @@ public abstract class Annotation
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
 
     public abstract Annotation Copy();
+
+    /// <summary>
+    /// Takes on another annotation's look, leaving its own geometry and its place in the document
+    /// alone.
+    ///
+    /// What counts as the look is each kind's own business, which is why this lives here rather
+    /// than in the band that offers the ready-made ones. A style is a complete look and not a
+    /// suggestion: it sets everything it covers, so picking one twice gives the same annotation
+    /// both times.
+    /// </summary>
+    public abstract void AdoptStyle(Annotation style);
+
+    /// <summary>Whether it already looks exactly like the given one. False for a different kind of annotation.</summary>
+    public abstract bool WearsStyle(Annotation style);
 }
 
 /// <summary>
@@ -61,6 +75,19 @@ public sealed class ArrowAnnotation : Annotation
         Id = Id, X1 = X1, Y1 = Y1, X2 = X2, Y2 = Y2,
         Color = Color, Thickness = Thickness, DoubleHeaded = DoubleHeaded
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is ArrowAnnotation arrow)
+        {
+            Color = arrow.Color;
+            Thickness = arrow.Thickness;
+            DoubleHeaded = arrow.DoubleHeaded;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is ArrowAnnotation arrow
+        && Color == arrow.Color && Thickness == arrow.Thickness && DoubleHeaded == arrow.DoubleHeaded;
 }
 
 public sealed class BlurAnnotation : RectAnnotation
@@ -97,6 +124,16 @@ public sealed class BlurAnnotation : RectAnnotation
     {
         Id = Id, X = X, Y = Y, Width = Width, Height = Height, Strength = Strength
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is BlurAnnotation blur)
+        {
+            Strength = blur.Strength;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is BlurAnnotation blur && Strength == blur.Strength;
 }
 
 public sealed class BoxAnnotation : RectAnnotation
@@ -119,6 +156,19 @@ public sealed class BoxAnnotation : RectAnnotation
         Id = Id, X = X, Y = Y, Width = Width, Height = Height,
         BorderColor = BorderColor, BorderThickness = BorderThickness, FillColor = FillColor
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is BoxAnnotation box)
+        {
+            BorderColor = box.BorderColor;
+            BorderThickness = box.BorderThickness;
+            FillColor = box.FillColor;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is BoxAnnotation box
+        && BorderColor == box.BorderColor && BorderThickness == box.BorderThickness && FillColor == box.FillColor;
 }
 
 public sealed class TextAnnotation : Annotation
@@ -153,6 +203,24 @@ public sealed class TextAnnotation : Annotation
         Id = Id, X = X, Y = Y, Text = Text, FontFamily = FontFamily, FontSize = FontSize, Color = Color,
         Background = Background, BackgroundPadding = BackgroundPadding
     };
+
+    /// <summary>
+    /// The face is left out of it, deliberately: there is no way to choose one on the band, so a
+    /// style that set it could only ever take away a choice made somewhere else.
+    /// </summary>
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is TextAnnotation text)
+        {
+            Color = text.Color;
+            FontSize = text.FontSize;
+            Background = text.Background;
+            BackgroundPadding = text.BackgroundPadding;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is TextAnnotation text
+        && Color == text.Color && FontSize == text.FontSize && Background == text.Background;
 }
 
 /// <summary>
@@ -183,6 +251,19 @@ public sealed class StepAnnotation : Annotation
     {
         Id = Id, X = X, Y = Y, Number = Number, Diameter = Diameter, Color = Color
     };
+
+    /// <summary>The number is not part of the look. It says which step this is, which no style knows.</summary>
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is StepAnnotation step)
+        {
+            Color = step.Color;
+            Diameter = step.Diameter;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is StepAnnotation step
+        && Color == step.Color && Diameter == step.Diameter;
 }
 
 /// <summary>

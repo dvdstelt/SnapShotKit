@@ -69,6 +69,80 @@ public sealed class ToolDefaults
     public string TextColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
     public string TextFont { get; set; } = "Barlow, sans-serif";
     public double TextSize { get; set; } = 22;
+
+    /// <summary>
+    /// Takes on a ready-made look, so that the next annotation of that kind is drawn wearing it.
+    ///
+    /// A style is a complete look, so it sets everything it covers, including turning a fill or a
+    /// plate off. The colour of one that has been turned off is kept, which is what makes turning
+    /// it back on remember what it was.
+    /// </summary>
+    public void Adopt(Annotation style)
+    {
+        switch (style)
+        {
+            case ArrowAnnotation arrow:
+                ArrowColor = arrow.Color;
+                ArrowThickness = arrow.Thickness;
+                ArrowDoubleHeaded = arrow.DoubleHeaded;
+                break;
+
+            case BoxAnnotation box:
+                BoxBorderColor = box.BorderColor;
+                BoxBorderThickness = box.BorderThickness;
+                BoxFilled = box.HasFill;
+
+                if (box.HasFill)
+                {
+                    BoxFillColor = box.FillColor;
+                }
+
+                break;
+
+            case TextAnnotation text:
+                TextColor = text.Color;
+                TextSize = text.FontSize;
+                TextBackgrounded = text.HasBackground;
+
+                if (text.HasBackground)
+                {
+                    TextBackgroundColor = text.Background;
+                }
+
+                break;
+
+            case StepAnnotation step:
+                StepColor = step.Color;
+                StepDiameter = step.Diameter;
+                break;
+
+            case BlurAnnotation blur:
+                BlurStrength = blur.Strength;
+                break;
+        }
+    }
+
+    /// <summary>Whether the next annotation drawn would come out looking exactly like this style.</summary>
+    public bool Wears(Annotation style) => style switch
+    {
+        ArrowAnnotation arrow => ArrowColor == arrow.Color
+            && ArrowThickness == arrow.Thickness
+            && ArrowDoubleHeaded == arrow.DoubleHeaded,
+
+        BoxAnnotation box => BoxBorderColor == box.BorderColor
+            && BoxBorderThickness == box.BorderThickness
+            && (BoxFilled ? BoxFillColor : string.Empty) == box.FillColor,
+
+        TextAnnotation text => TextColor == text.Color
+            && TextSize == text.FontSize
+            && (TextBackgrounded ? TextBackgroundColor : string.Empty) == text.Background,
+
+        StepAnnotation step => StepColor == step.Color && StepDiameter == step.Diameter,
+
+        BlurAnnotation blur => BlurStrength == blur.Strength,
+
+        _ => false
+    };
 }
 
 /// <summary>

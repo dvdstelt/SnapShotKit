@@ -97,8 +97,8 @@ public sealed class NumberField : StackPanel
         var segment = new Border
         {
             Child = label,
-            Padding = new Thickness(Tokens.Space.S3, 0),
-            MinWidth = 30,
+            Padding = new Thickness(Tokens.Space.S2, 0),
+            MinWidth = 26,
             Background = Tokens.BgBrush,
             CornerRadius = Tokens.Radius,
             Cursor = new Cursor(StandardCursorType.Hand),

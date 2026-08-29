@@ -89,8 +89,11 @@ public sealed class EditorWindow : Window
         canvas = new CanvasView(snapshot, blurs);
 
         Title = $"SnapShotKit - {Path.GetFileName(snapshot.Path)}";
-        Width = 1180;
-        Height = 740;
+
+        // Wide enough for the band's busiest tool. A window that opens too narrow for its own
+        // chrome starts by hiding a control the user has not been shown yet.
+        Width = 1320;
+        Height = 760;
         Background = Tokens.BgBrush;
 
         WireCanvas();
@@ -394,6 +397,8 @@ public sealed class EditorWindow : Window
         band.UndoRequested += Undo;
         band.RedoRequested += Redo;
 
+        band.StyleChosen += ApplyStyle;
+
         band.ColourChosen += colour =>
         {
             switch (BandTarget())
@@ -539,6 +544,38 @@ public sealed class EditorWindow : Window
 
         dirty = true;
         canvas.CanvasResized();
+        UpdateChrome();
+    }
+
+    /// <summary>
+    /// Takes a ready-made look, for the next annotation drawn and for the selected one.
+    ///
+    /// The same two places every other setting on the band lands in, and one undoable step for the
+    /// whole look rather than one per property it happens to cover.
+    /// </summary>
+    void ApplyStyle(AnnotationStyle style)
+    {
+        canvas.Defaults.Adopt(style.Look);
+
+        if (canvas.Selected is { } target && target.GetType() == style.Look.GetType())
+        {
+            var edit = $"{target.Id}|style {style.Name}";
+            if (edit != lastBandEdit)
+            {
+                Record();
+                lastBandEdit = edit;
+            }
+
+            target.AdoptStyle(style.Look);
+
+            // A look changed while text is being typed has to reach the editor too, or the words
+            // keep the old colour until the edit ends.
+            canvas.RefreshEditing();
+
+            dirty = true;
+            canvas.InvalidateVisual();
+        }
+
         UpdateChrome();
     }
 

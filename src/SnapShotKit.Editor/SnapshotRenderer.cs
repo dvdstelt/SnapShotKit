@@ -65,28 +65,41 @@ public static class SnapshotRenderer
                 continue;
             }
 
-            switch (annotation)
-            {
-                case BlurAnnotation blur:
-                    DrawBlur(context, blurs, blur, origin, scale);
-                    break;
+            DrawAnnotation(context, annotation, blurs, origin, scale);
+        }
+    }
 
-                case BoxAnnotation box:
-                    DrawBox(context, box, origin, scale);
-                    break;
+    /// <summary>
+    /// One annotation, wherever the image's origin has landed.
+    ///
+    /// Public so that the band's style previews go through it too: a preview drawn by any other
+    /// code would eventually stop looking like the thing it promises.
+    /// </summary>
+    /// <param name="blurs">The blurred copies of the capture, or null where there is no capture to blur, as in a preview.</param>
+    public static void DrawAnnotation(DrawingContext context, Annotation annotation, BlurCache? blurs,
+        Point origin, double scale)
+    {
+        switch (annotation)
+        {
+            case BlurAnnotation blur when blurs is not null:
+                DrawBlur(context, blurs, blur, origin, scale);
+                break;
 
-                case ArrowAnnotation arrow:
-                    DrawArrow(context, arrow, origin, scale);
-                    break;
+            case BoxAnnotation box:
+                DrawBox(context, box, origin, scale);
+                break;
 
-                case StepAnnotation step:
-                    DrawStep(context, step, origin, scale);
-                    break;
+            case ArrowAnnotation arrow:
+                DrawArrow(context, arrow, origin, scale);
+                break;
 
-                case TextAnnotation text:
-                    DrawText(context, text, origin, scale);
-                    break;
-            }
+            case StepAnnotation step:
+                DrawStep(context, step, origin, scale);
+                break;
+
+            case TextAnnotation text:
+                DrawText(context, text, origin, scale);
+                break;
         }
     }
 
