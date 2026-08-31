@@ -305,6 +305,9 @@ public sealed class CanvasView : Decorator
     ///
     /// The canvas tool is a mode rather than a way of drawing: picking it opens a resize, and
     /// leaving it abandons one that was never applied.
+    ///
+    /// Neither it nor the cut tool works on anything standing on the picture, so both drop the
+    /// selection as they are picked up.
     /// </summary>
     public EditorTool Tool
     {
@@ -329,6 +332,17 @@ public sealed class CanvasView : Decorator
             if (value == EditorTool.Canvas)
             {
                 OpenResize();
+            }
+
+            if (value == EditorTool.Cut)
+            {
+                // For the same reason the canvas tool does it, and with the same consequences if it
+                // does not. A selection left standing keeps the band pointed at that object's own
+                // settings, so the one thing this tool has to set is nowhere to be found; and since
+                // nothing on the picture is outlined while a band is being marked, what is left is
+                // an invisible selection that Delete still deletes.
+                CommitEdit();
+                Select(null);
             }
 
             InvalidateMeasure();
