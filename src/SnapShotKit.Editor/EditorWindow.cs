@@ -824,6 +824,11 @@ public sealed class EditorWindow : Window
         dirty = true;
 
         canvas.Select(null);
+
+        // A resize being negotiated is pointed at the restored canvas rather than left describing
+        // the one that has just been stepped away from. Undo is reachable from the keys, the band
+        // and the menu while the mode is open, and a proposal is not in the history at all.
+        canvas.SeedResize();
         canvas.CanvasResized();
         UpdateChrome();
     }

@@ -305,6 +305,9 @@ public sealed class CanvasView : Decorator
     ///
     /// The canvas tool is a mode rather than a way of drawing: picking it opens a resize, and
     /// leaving it abandons one that was never applied.
+    ///
+    /// Neither it nor the cut tool works on anything standing on the picture, so both drop the
+    /// selection as they are picked up.
     /// </summary>
     public EditorTool Tool
     {
@@ -329,6 +332,17 @@ public sealed class CanvasView : Decorator
             if (value == EditorTool.Canvas)
             {
                 OpenResize();
+            }
+
+            if (value == EditorTool.Cut)
+            {
+                // For the same reason the canvas tool does it, and with the same consequences if it
+                // does not. A selection left standing keeps the band pointed at that object's own
+                // settings, so the one thing this tool has to set is nowhere to be found; and since
+                // nothing on the picture is outlined while a band is being marked, what is left is
+                // an invisible selection that Delete still deletes.
+                CommitEdit();
+                Select(null);
             }
 
             InvalidateMeasure();
@@ -954,13 +968,36 @@ public sealed class CanvasView : Decorator
         // tool would only put handles on the picture that this one does not use.
         Select(null);
 
-        var proposed = CanvasRect();
-        resizing = new CanvasResize { Proposed = proposed, Frame = FrameAround(proposed, CaptureRect()) };
+        resizing = new CanvasResize();
+        SeedResize();
+    }
 
-        // Left for the first measure to work out, since it depends on the room available.
+    /// <summary>
+    /// Points an open resize back at the canvas the document now has.
+    ///
+    /// A proposal is not in the undo history, because nothing reaches the document until it is
+    /// applied. A step through that history therefore leaves the proposal describing a canvas that
+    /// no longer exists, and the boundary on screen and the size fields go on offering it: pressing
+    /// Enter would then write back the very crop that was just undone. Seeded afresh, they show
+    /// what was restored, and the mode carries on rather than being thrown away underneath someone.
+    /// </summary>
+    public void SeedResize()
+    {
+        if (resizing is not { } session)
+        {
+            return;
+        }
+
+        session.Proposed = CanvasRect();
+        session.Frame = FrameAround(session.Proposed, CaptureRect());
+
+        // Left for the next measure to work out, since it depends on the room available.
         sessionScale = 0;
 
         CanvasProposalChanged?.Invoke();
+
+        InvalidateMeasure();
+        InvalidateVisual();
     }
 
     /// <summary>
@@ -1238,8 +1275,20 @@ public sealed class CanvasView : Decorator
 
     void Cut(Point to)
     {
-        var across = Math.Abs(to.X - cutFrom.X);
-        var down = Math.Abs(to.Y - cutFrom.Y);
+        // Whole pixels, the same way the canvas is, and for the same reason: a band is a stretch of
+        // rows or columns, and there is no such thing as three fifths of a row. Both ends are
+        // rounded rather than the width, so a band always starts and finishes on a real pixel.
+        //
+        // A fractional band would be paid for everywhere afterwards. The picture past the join is
+        // drawn shifted by what the band took, and shifted by a fraction it lands between pixels
+        // and is resampled, which on a screenshot means soft text below every cut. The export would
+        // round the height it allocates while drawing an area that was never rounded, and the size
+        // fields would keep handing back a number one short of the one typed into them.
+        var from = new Point(Math.Round(cutFrom.X), Math.Round(cutFrom.Y));
+        var at = new Point(Math.Round(to.X), Math.Round(to.Y));
+
+        var across = Math.Abs(at.X - from.X);
+        var down = Math.Abs(at.Y - from.Y);
 
         var axis = Defaults.CutDirection ?? cutting?.Axis switch
         {
@@ -1250,8 +1299,8 @@ public sealed class CanvasView : Decorator
         };
 
         cutting = axis == CutAxis.Rows
-            ? new CutBand { Axis = CutAxis.Rows, At = Math.Min(cutFrom.Y, to.Y), Extent = down }
-            : new CutBand { Axis = CutAxis.Columns, At = Math.Min(cutFrom.X, to.X), Extent = across };
+            ? new CutBand { Axis = CutAxis.Rows, At = Math.Min(from.Y, at.Y), Extent = down }
+            : new CutBand { Axis = CutAxis.Columns, At = Math.Min(from.X, at.X), Extent = across };
 
         InvalidateVisual();
     }
@@ -1363,6 +1412,12 @@ public sealed class CanvasView : Decorator
     /// what the eye sees and what the hand goes for. The corners take a longer stretch of both
     /// their sides, so the one place two grips meet is not a pixel hunt. Either side of the line
     /// counts, since the surround is on show in this mode and is as good a place to aim at.
+    ///
+    /// How far a corner reaches is capped at half the side it reaches along, so that the two ends
+    /// of a side can never both claim the same stretch of it. Without the cap, a canvas narrower
+    /// than two corners answered every question with its left edge, and aiming at the right one to
+    /// pull the canvas back out dragged the left one the other way instead. It takes a small canvas
+    /// to manage that, or an ordinary one seen at ten percent.
     /// </summary>
     DragKind HitCanvasEdge(Point view, CanvasResize session)
     {
@@ -1381,8 +1436,11 @@ public sealed class CanvasView : Decorator
             return DragKind.None;
         }
 
-        var horizontal = view.X <= rect.X + CornerReach ? -1 : view.X >= rect.Right - CornerReach ? 1 : 0;
-        var vertical = view.Y <= rect.Y + CornerReach ? -1 : view.Y >= rect.Bottom - CornerReach ? 1 : 0;
+        var alongX = Math.Min(CornerReach, rect.Width / 2);
+        var alongY = Math.Min(CornerReach, rect.Height / 2);
+
+        var horizontal = view.X <= rect.X + alongX ? -1 : view.X >= rect.Right - alongX ? 1 : 0;
+        var vertical = view.Y <= rect.Y + alongY ? -1 : view.Y >= rect.Bottom - alongY ? 1 : 0;
 
         return (horizontal, vertical) switch
         {
