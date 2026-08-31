@@ -142,7 +142,9 @@ Transparency is drawn as a chequerboard on the editing canvas and as nothing at 
 
 ## Cutting a band out
 
-A screenshot of a phone or a long page often has a stretch in the middle that nobody needs: a gap, a repeated header, half a screen of nothing. Dragging down the picture with the cut tool marks a band of rows and dragging across it marks a band of columns, and what is left closes up.
+A screenshot of a phone or a long page often has a stretch in the middle that nobody needs: a gap, a repeated header, half a screen of nothing. Dragging down the picture with the cut tool marks a band of rows and dragging across it marks a band of columns, and what is left closes up. Which way it runs can also be said outright, because working it out from the drag is right nearly always and useless for a band a few pixels across, where the answer changes with every twitch of the hand. Left to itself it takes the first direction the drag commits to and holds it until the other is clearly meant, rather than swapping on every movement.
+
+Letting go takes the band. Escape abandons it, and it is the only thing that does: a drag ends down two paths, the release and the loss of capture, and the two cannot be allowed to disagree about what a finished drag means.
 
 It is geometry, not a pixel edit, for the same reason a crop is. `original.png` is never touched; the band goes into the document, and from then on the picture is drawn in pieces with that band skipped and everything after it shifted up or left by what the band took. Taking the cut back out puts the picture back exactly as it was.
 

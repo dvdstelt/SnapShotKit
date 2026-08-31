@@ -74,6 +74,14 @@ public sealed class ToolDefaults
     public double TextSize { get; set; } = 22;
 
     /// <summary>
+    /// Which way a cut runs, or null to take it from the drag.
+    ///
+    /// Working it out from the drag is right almost always and useless for a band a few pixels
+    /// across, where the answer changes with every twitch. Saying which is meant settles it.
+    /// </summary>
+    public CutAxis? CutDirection { get; set; }
+
+    /// <summary>
     /// Takes on a ready-made look, so that the next annotation of that kind is drawn wearing it.
     ///
     /// A style is a complete look, so it sets everything it covers, including turning a fill or a
@@ -1205,8 +1213,7 @@ public sealed class CanvasView : Decorator
 
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
-        // A band the pointer never finished choosing is not one anybody asked to lose.
-        EndCut(keep: false);
+        EndCut();
 
         if (grabbed)
         {
@@ -1228,21 +1235,46 @@ public sealed class CanvasView : Decorator
     /// <summary>Anything thinner than this in capture pixels is a click that wandered, not a band.</summary>
     const double MinimumCut = 3;
 
+    /// <summary>
+    /// How much further the pointer has to go the other way before a band decided by the drag
+    /// changes its mind.
+    ///
+    /// Without it a band a few pixels across flickers between the two as the hand wavers, which is
+    /// no way to choose anything. With it the first direction wins until the other one is clearly
+    /// meant, and a drag begun the wrong way can still be corrected without letting go.
+    /// </summary>
+    const double AxisHysteresis = 10;
+
     void Cut(Point to)
     {
-        var across = to.X - cutFrom.X;
-        var down = to.Y - cutFrom.Y;
+        var across = Math.Abs(to.X - cutFrom.X);
+        var down = Math.Abs(to.Y - cutFrom.Y);
 
-        // Whichever way the pointer has gone furthest, decided afresh on every movement so that a
-        // drag begun the wrong way can be corrected without letting go.
-        cutting = Math.Abs(down) >= Math.Abs(across)
-            ? new CutBand { Axis = CutAxis.Rows, At = Math.Min(cutFrom.Y, to.Y), Extent = Math.Abs(down) }
-            : new CutBand { Axis = CutAxis.Columns, At = Math.Min(cutFrom.X, to.X), Extent = Math.Abs(across) };
+        var axis = Defaults.CutDirection ?? cutting?.Axis switch
+        {
+            CutAxis.Rows when across > down + AxisHysteresis => CutAxis.Columns,
+            CutAxis.Columns when down > across + AxisHysteresis => CutAxis.Rows,
+            { } decided => decided,
+            _ => down >= across ? CutAxis.Rows : CutAxis.Columns
+        };
+
+        cutting = axis == CutAxis.Rows
+            ? new CutBand { Axis = CutAxis.Rows, At = Math.Min(cutFrom.Y, to.Y), Extent = down }
+            : new CutBand { Axis = CutAxis.Columns, At = Math.Min(cutFrom.X, to.X), Extent = across };
 
         InvalidateVisual();
     }
 
-    void EndCut(bool keep)
+    /// <summary>
+    /// Ends the drag and takes the band out.
+    ///
+    /// Called from the release and from the loss of capture, which here are the same event twice:
+    /// letting the capture go is itself reported as capture lost, and there is no saying which of
+    /// the two arrives first. So both do the same thing and the order cannot matter. An earlier
+    /// version had one of them keep the band and the other throw it away, and whichever ran second
+    /// found nothing left to do, which is why nothing was ever cut. Escape is what abandons a band.
+    /// </summary>
+    void EndCut()
     {
         if (!cuttingDrag)
         {
@@ -1251,7 +1283,7 @@ public sealed class CanvasView : Decorator
 
         cuttingDrag = false;
 
-        if (keep && cutting is { Extent: >= MinimumCut } band)
+        if (cutting is { Extent: >= MinimumCut } band)
         {
             BeforeChange?.Invoke();
 
@@ -1265,6 +1297,23 @@ public sealed class CanvasView : Decorator
 
         // The picture is a different size now, so the control is too.
         InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    /// <summary>True while a band is being dragged out, so the window knows what Escape is for.</summary>
+    public bool IsCutting => cuttingDrag;
+
+    /// <summary>Abandons the band being dragged, which is the one way out of a cut that does not make it.</summary>
+    public void CancelCut()
+    {
+        if (!cuttingDrag)
+        {
+            return;
+        }
+
+        cuttingDrag = false;
+        cutting = null;
+
         InvalidateVisual();
     }
 
@@ -1511,8 +1560,8 @@ public sealed class CanvasView : Decorator
     {
         if (cuttingDrag)
         {
+            EndCut();
             e.Pointer.Capture(null);
-            EndCut(keep: true);
             return;
         }
 

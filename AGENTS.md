@@ -124,7 +124,7 @@ None of these fail at the compiler. Each one showed up as a window doing somethi
 - **`Bounds` inside `ArrangeOverride` holds the previous pass's answer**, and on the first pass holds nothing at all. Measure against the size being arranged.
 - **`LayoutUpdated` fires after every layout pass, on every control.** It is the right hook for keeping something pinned to a control that moves, but whatever it sets must be assigned only when the value has actually changed, or the layout never settles.
 - **`ScrollViewer` reads a wheel as a scroll and marks it handled**, so a handler added with `+=` never runs. Tunnel to get in ahead of it, and leave the modifiers it still needs alone.
-- **Releasing pointer capture with `Capture(null)` reports capture lost synchronously.** Anything that ends a drag has to be safe to call twice, and in either order.
+- **Releasing pointer capture with `Capture(null)` reports capture lost synchronously**, so a drag ends down two paths and there is no saying which arrives first. Both must do the same thing. One that kept the result and another that threw it away is a feature that silently never happens: whichever ran second found nothing left to do. If a drag needs a way to be abandoned, give it a key rather than a second ending.
 - **The stock Fluent theme wins over properties set on the control**, because it sets them on the template's presenter instead. That is what `Buttons.Bare`, `TextFields.Bare`, `Slide` and `ColourPicker` exist for; see the design system section above.
 
 ## Checking the interface

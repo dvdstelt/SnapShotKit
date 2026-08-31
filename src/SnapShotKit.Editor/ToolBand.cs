@@ -48,6 +48,7 @@ public sealed class ToolBand : Border
     readonly NumberField textSize;
     readonly Segmented head;
     readonly Segmented fill;
+    readonly Segmented cutDirection;
 
     readonly StyleField style;
 
@@ -66,6 +67,7 @@ public sealed class ToolBand : Border
     readonly Control fillGroup;
     readonly Control blurGroup;
     readonly Control textSizeGroup;
+    readonly Control cutDirectionGroup;
     readonly Control canvasWidthGroup;
     readonly Control canvasHeightGroup;
     readonly Control canvasFitGroup;
@@ -98,6 +100,15 @@ public sealed class ToolBand : Border
         stepSize = new NumberField("Size", [28, 36, 48, 64], 12, 200, value => StepSizeChosen?.Invoke(value));
 
         head = new Segmented(["Single", "Double"], index => DoubleHeadChosen?.Invoke(index == 1));
+
+        // Automatic first, because it is right nearly always: a band is almost never so small that
+        // the way it was dragged does not say which way it runs.
+        cutDirection = new Segmented(["Auto", "Horizontal", "Vertical"], index => CutDirectionChosen?.Invoke(index switch
+        {
+            1 => CutAxis.Rows,
+            2 => CutAxis.Columns,
+            _ => null
+        }));
         fill = new Segmented(["None", "Solid"], index => FillChosen?.Invoke(index == 1));
 
         style = new StyleField(state, chosen => StyleChosen?.Invoke(chosen));
@@ -116,6 +127,9 @@ public sealed class ToolBand : Border
         textBackColourGroup = Group("Background colour", textBackColour);
         stepNumberGroup = Group("Number", stepNumber);
         stepSizeGroup = Group("Size", stepSize);
+
+        cutDirectionGroup = Group("Band", cutDirection);
+        ToolTip.SetTip(cutDirection, "Which way the band runs.\nHorizontal takes rows out and makes the picture shorter; vertical takes columns and makes it narrower.");
 
         Control widthBox;
         Control heightBox;
@@ -141,7 +155,7 @@ public sealed class ToolBand : Border
                  {
                      styleGroup, colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
                      headGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
-                     canvasWidthGroup, canvasHeightGroup, canvasFitGroup
+                     cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup
                  })
         {
             settings.Children.Add(group);
@@ -218,6 +232,9 @@ public sealed class ToolBand : Border
     public event Action? ZoomFitRequested;
     /// <summary>A whole look, chosen in one go.</summary>
     public event Action<AnnotationStyle>? StyleChosen;
+
+    /// <summary>Which way a cut runs, or null to take it from the drag.</summary>
+    public event Action<CutAxis?>? CutDirectionChosen;
 
     public event Action<int>? CanvasWidthChosen;
     public event Action<int>? CanvasHeightChosen;
@@ -517,6 +534,14 @@ public sealed class ToolBand : Border
         textBackGroup.IsVisible = kind is EditorTool.Text;
         stepNumberGroup.IsVisible = kind is EditorTool.Step;
         stepSizeGroup.IsVisible = kind is EditorTool.Step;
+        cutDirectionGroup.IsVisible = kind is EditorTool.Cut;
+        cutDirection.Select(defaults.CutDirection switch
+        {
+            CutAxis.Rows => 1,
+            CutAxis.Columns => 2,
+            _ => 0
+        });
+
         canvasWidthGroup.IsVisible = kind is EditorTool.Canvas;
         canvasHeightGroup.IsVisible = kind is EditorTool.Canvas;
         canvasFitGroup.IsVisible = kind is EditorTool.Canvas;

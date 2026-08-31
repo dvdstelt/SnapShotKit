@@ -405,6 +405,12 @@ public sealed class EditorWindow : Window
 
         band.StyleChosen += ApplyStyle;
 
+        band.CutDirectionChosen += axis =>
+        {
+            canvas.Defaults.CutDirection = axis;
+            UpdateChrome();
+        };
+
         band.ColourChosen += colour =>
         {
             switch (BandTarget())
@@ -1204,6 +1210,15 @@ public sealed class EditorWindow : Window
                 e.Handled = true;
             }
 
+            return;
+        }
+
+        // A band still being dragged out is abandoned rather than taken, since letting go is what
+        // takes it and there has to be a way back from a drag begun by accident.
+        if (canvas.IsCutting && e.Key == Key.Escape)
+        {
+            canvas.CancelCut();
+            e.Handled = true;
             return;
         }
 
