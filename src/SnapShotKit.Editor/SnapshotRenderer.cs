@@ -29,17 +29,62 @@ public static class SnapshotRenderer
         return brush;
     }
 
+    /// <param name="area">
+    /// The stretch of laid-out space being drawn, in image pixels with the cuts already closed.
+    /// Usually the canvas, which is what gets exported. The editor passes something larger while the
+    /// canvas is being resized, so that what falls outside it can be seen rather than guessed at.
+    /// </param>
+    /// <param name="target">Where that stretch lands.</param>
     /// <param name="suppress">
     /// An annotation to leave undrawn. Used while text is being typed in place, where the editor
     /// itself is showing the words: drawing them underneath as well would double every stroke.
     /// </param>
-    public static void Draw(DrawingContext context, Snapshot snapshot, BlurCache blurs, Rect target,
+    public static void Draw(DrawingContext context, Snapshot snapshot, BlurCache blurs, Rect target, Rect area,
         Annotation? suppress = null)
     {
-        var canvas = snapshot.Document.Canvas;
-        var scale = canvas.Width == 0 ? 1 : target.Width / canvas.Width;
+        var scale = area.Width == 0 ? 1 : target.Width / area.Width;
 
-        context.DrawImage(snapshot.Bitmap, target);
+        // Everything drawn on a snapshot is positioned against the capture's top-left corner rather
+        // than the canvas's, so that cropping the canvas in or pushing it out moves nothing that was
+        // drawn on it. This is where that corner falls on the target, before any cut moves it.
+        var origin = Origin(area, target, scale);
+
+        // A piece at a time, each one the whole picture drawn shifted by what the cuts before it
+        // took and clipped to its own band. With nothing cut that is one piece, no shift and a clip
+        // around everything, which is the same drawing as before cuts existed.
+        var layout = snapshot.Layout;
+
+        foreach (var (piece, shift) in layout.Pieces(layout.ToCapture(area)))
+        {
+            var laid = new Rect(piece.X - shift.X, piece.Y - shift.Y, piece.Width, piece.Height);
+
+            var within = new Rect(
+                origin.X + laid.X * scale,
+                origin.Y + laid.Y * scale,
+                laid.Width * scale,
+                laid.Height * scale);
+
+            if (within.Width <= 0 || within.Height <= 0)
+            {
+                continue;
+            }
+
+            using (context.PushClip(within))
+            {
+                DrawPiece(context, snapshot, blurs, origin - shift * scale, scale, suppress);
+            }
+        }
+    }
+
+    /// <summary>The capture and everything on it, positioned in capture pixels from a given corner.</summary>
+    static void DrawPiece(DrawingContext context, Snapshot snapshot, BlurCache blurs, Point origin, double scale,
+        Annotation? suppress)
+    {
+        // The capture at its own size, wherever the canvas sits around it. Whatever the canvas
+        // covers beyond the capture is simply not painted, which is what makes it transparent.
+        context.DrawImage(snapshot.Bitmap, new Rect(origin, new Size(
+            snapshot.Bitmap.PixelSize.Width * scale,
+            snapshot.Bitmap.PixelSize.Height * scale)));
 
         // In the order they are in. What is on top is the user's to decide, which is why every
         // annotation can be moved forward and back; a rule that always put one kind underneath
@@ -51,55 +96,68 @@ public static class SnapshotRenderer
                 continue;
             }
 
-            switch (annotation)
-            {
-                case BlurAnnotation blur:
-                    DrawBlur(context, blurs, blur, target, scale);
-                    break;
+            DrawAnnotation(context, annotation, blurs, origin, scale);
+        }
+    }
 
-                case BoxAnnotation box:
-                    DrawBox(context, box, target, scale);
-                    break;
+    /// <summary>
+    /// One annotation, wherever the image's origin has landed.
+    ///
+    /// Public so that the band's style previews go through it too: a preview drawn by any other
+    /// code would eventually stop looking like the thing it promises.
+    /// </summary>
+    /// <param name="blurs">The blurred copies of the capture, or null where there is no capture to blur, as in a preview.</param>
+    public static void DrawAnnotation(DrawingContext context, Annotation annotation, BlurCache? blurs,
+        Point origin, double scale)
+    {
+        switch (annotation)
+        {
+            case BlurAnnotation blur when blurs is not null:
+                DrawBlur(context, blurs, blur, origin, scale);
+                break;
 
-                case ArrowAnnotation arrow:
-                    DrawArrow(context, arrow, target, scale);
-                    break;
+            case BoxAnnotation box:
+                DrawBox(context, box, origin, scale);
+                break;
 
-                case StepAnnotation step:
-                    DrawStep(context, step, target, scale);
-                    break;
+            case ArrowAnnotation arrow:
+                DrawArrow(context, arrow, origin, scale);
+                break;
 
-                case TextAnnotation text:
-                    DrawText(context, text, target, scale);
-                    break;
-            }
+            case StepAnnotation step:
+                DrawStep(context, step, origin, scale);
+                break;
+
+            case TextAnnotation text:
+                DrawText(context, text, origin, scale);
+                break;
         }
     }
 
     /// <summary>Text, on its plate when it has one.</summary>
-    static void DrawText(DrawingContext context, TextAnnotation text, Rect target, double scale)
+    static void DrawText(DrawingContext context, TextAnnotation text, Point origin, double scale)
     {
         var formatted = Format(text, scale);
-        var origin = new Point(target.X + text.X * scale, target.Y + text.Y * scale);
+        var at = new Point(origin.X + text.X * scale, origin.Y + text.Y * scale);
 
         if (text.HasBackground)
         {
             var padding = text.BackgroundPadding * scale;
 
             context.FillRectangle(BrushFor(text.Background), new Rect(
-                origin.X - padding,
-                origin.Y - padding,
+                at.X - padding,
+                at.Y - padding,
                 formatted.Width + 2 * padding,
                 formatted.Height + 2 * padding));
         }
 
-        context.DrawText(formatted, origin);
+        context.DrawText(formatted, at);
     }
 
     /// <summary>A numbered marker: a filled disc with its number centred in it.</summary>
-    static void DrawStep(DrawingContext context, StepAnnotation step, Rect target, double scale)
+    static void DrawStep(DrawingContext context, StepAnnotation step, Point origin, double scale)
     {
-        var centre = new Point(target.X + step.X * scale, target.Y + step.Y * scale);
+        var centre = new Point(origin.X + step.X * scale, origin.Y + step.Y * scale);
         var radius = Math.Max(step.Radius * scale, 1);
         var fill = ParseColor(step.Color);
 
@@ -122,11 +180,11 @@ public static class SnapshotRenderer
     public static Color Legible(Color on) =>
         (0.299 * on.R + 0.587 * on.G + 0.114 * on.B) / 255 > 0.6 ? Color.FromRgb(0x1D, 0x1F, 0x20) : Colors.White;
 
-    static void DrawBox(DrawingContext context, BoxAnnotation box, Rect target, double scale)
+    static void DrawBox(DrawingContext context, BoxAnnotation box, Point origin, double scale)
     {
         var rect = new Rect(
-            target.X + box.X * scale,
-            target.Y + box.Y * scale,
+            origin.X + box.X * scale,
+            origin.Y + box.Y * scale,
             Math.Max(box.Width * scale, 1),
             Math.Max(box.Height * scale, 1));
 
@@ -146,13 +204,13 @@ public static class SnapshotRenderer
         Math.Max(text.FontSize * scale, 1),
         BrushFor(text.Color));
 
-    static void DrawBlur(DrawingContext context, BlurCache blurs, BlurAnnotation blur, Rect target, double scale)
+    static void DrawBlur(DrawingContext context, BlurCache blurs, BlurAnnotation blur, Point origin, double scale)
     {
         var source = new Rect(blur.X, blur.Y, Math.Max(blur.Width, 1), Math.Max(blur.Height, 1));
 
         var destination = new Rect(
-            target.X + blur.X * scale,
-            target.Y + blur.Y * scale,
+            origin.X + blur.X * scale,
+            origin.Y + blur.Y * scale,
             Math.Max(blur.Width * scale, 1),
             Math.Max(blur.Height * scale, 1));
 
@@ -164,10 +222,10 @@ public static class SnapshotRenderer
         context.DrawImage(blurs.For(blur.Strength), source, destination);
     }
 
-    static void DrawArrow(DrawingContext context, ArrowAnnotation arrow, Rect target, double scale)
+    static void DrawArrow(DrawingContext context, ArrowAnnotation arrow, Point origin, double scale)
     {
-        var from = new Point(target.X + arrow.X1 * scale, target.Y + arrow.Y1 * scale);
-        var to = new Point(target.X + arrow.X2 * scale, target.Y + arrow.Y2 * scale);
+        var from = new Point(origin.X + arrow.X1 * scale, origin.Y + arrow.Y1 * scale);
+        var to = new Point(origin.X + arrow.X2 * scale, origin.Y + arrow.Y2 * scale);
 
         var span = to - from;
         var length = Math.Sqrt(span.X * span.X + span.Y * span.Y);
@@ -217,6 +275,15 @@ public static class SnapshotRenderer
 
         context.DrawGeometry(brush, null, head);
     }
+
+    /// <summary>
+    /// Where the capture's top-left corner falls, given which stretch of image space is on show.
+    ///
+    /// Shared with the editing canvas, which has to map a pointer back the other way and must agree
+    /// with this to the pixel or every click lands somewhere else than it looks.
+    /// </summary>
+    public static Point Origin(Rect area, Rect target, double scale) =>
+        new(target.X - area.X * scale, target.Y - area.Y * scale);
 
     public static Color ParseColor(string value)
         => Color.TryParse(value, out var color) ? color : Colors.Red;

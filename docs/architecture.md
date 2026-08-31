@@ -69,12 +69,14 @@ A `.ssk` file, for SnapShotKit snapshot, is a zip container in the manner of ODF
 
 ```
 snapshot-01.ssk  (zip)
-├── document.json     canvas size and annotation objects, each with its own geometry
+├── document.json     the canvas rectangle, the bands cut out, and the annotation objects
 ├── original.png      the capture as taken, never modified
 └── meta.json         when it was taken, the source screen size, the region within it
 ```
 
 The point of the format is that editing stays non-destructive. `original.png` is never touched, and every arrow, callout or blur is an object with coordinates rather than pixels burned into the image, so anything drawn today can be moved or deleted next week. Exporting to PNG or JPEG renders the document rather than being the document.
+
+The canvas is recorded as a rectangle rather than a size, because it is not obliged to match the capture: it carries an offset saying where its top-left corner sits relative to the capture's. A document written before that existed has no offset, and zero is exactly what it meant.
 
 Snapshots are numbered, `snapshot-01.ssk` upwards, because they are working documents a person refers to by name. Straight captures that skip the editor are timestamped instead, since nobody refers to those by number.
 
@@ -91,6 +93,12 @@ Annotations are drawn in the order they are in, and that order can be changed: f
 The window is a stack of full-width bands separated by hairlines: a menu bar, one band carrying both the drawing tools and their settings, the capture on a mat, and the recent captures along the bottom. Nothing floats over the picture. Commands live in the menus and settings live in the band, so saving and exporting do not spend permanent screen space on things pressed once at the end of a session.
 
 What the band shows follows the selection when there is one and the tool otherwise: selecting an object is a statement about what you mean to work on, whichever tool is in hand. It shows only the settings that apply, but never moves the ones it shows: colour is always in the same place, weight always the next along. The hand learns each position once. A selection overrides the tool when deciding what to show, because acting on a selected object is what the user is doing.
+
+The band leads with ready-made looks, one click each, and the settings that follow are what refine them. A look is the unit anyone actually works in: a red box with no fill, or white words on a black plate, is one decision, and reaching either through three controls in a row is three decisions where one was meant. Colour is not what they are for, since the palette beside them already changes a colour in one click; a style earns its place by combining things, and is offered in the few colours that combination is wanted in.
+
+Three of them sit on the band and the rest are in a gallery a click behind it, because the band has other work to do. The three are the ones used most recently, and one picked from the gallery takes the place of whichever of them has gone longest unused rather than pushing the row along: the hand learns where a style sits, and a row that reshuffled itself after every click would teach it nothing. Which three that leaves is remembered between sessions, by name rather than by position, so that adding a style or reordering the catalogue leaves everyone's band as they left it.
+
+The styles are prototype annotations rather than a table of values, and their previews are drawn by the renderer the canvas and the export use, so a preview cannot promise something the tool then does not do. A style is a complete look and sets everything it covers, including turning a fill or a plate off; changing any setting afterwards unmarks it, since the honest answer to "which of these am I wearing" is then none of them. Blur has no styles, because a style is a combination and blur has one thing to set.
 
 Settings lead with presets rather than sliders. The values worth having are mostly discrete, the choice is visible without being dragged, and a click is naturally one undo step where a drag is a hundred. Every setting still reaches any value: colours through a picker, numbers through a slider and a box behind a trailing segment. That segment shows the value whenever it is off the preset scale, so a custom choice never disappears from the band.
 
@@ -114,6 +122,46 @@ Text can sit on a plate. No single ink colour is legible over a photograph or a 
 
 Annotations that are defined by a rectangle share a `RectAnnotation` base, so the canvas moves and resizes a blur or a box without knowing which it has. Ellipse, highlight and step numbers would all fit the same way.
 
+## Resizing the canvas
+
+The canvas is the rectangle that gets exported, and it does not have to match the capture. Dragging an edge in crops the picture, dragging one out adds space that is transparent, and dragging the middle aims the canvas at the part worth keeping. Nothing touches `original.png`: a crop is geometry, so an edge pulled in can be pulled back out and the pixels are still there, which is the same promise the annotations get.
+
+Coordinates stay measured from the capture rather than from the canvas. That is what makes resizing cheap: every annotation is positioned against the picture it was drawn on, so moving the canvas moves nothing else, and cropping never rewrites a document to say where everything is now. Annotations that fall outside the canvas are clipped rather than deleted, on the editing canvas exactly as in the export.
+
+**It is a mode, and while it lasts the editor shows more than the canvas.** This is the whole of the idea. A canvas clipped to itself gives no way to see what an edge is about to cut away, so the mode lays the picture out on a working surface covering both the canvas and the capture, and dims what falls outside the canvas rather than hiding it. What is being cropped stays on screen, greyed, until it is actually cropped.
+
+The surface is that pair and nothing more: no room is kept back around it. Opening the mode would otherwise shrink the picture to make space that is not needed yet, which reads as the editor having done something when all that happened was a tool being picked. The room appears when it is called for, which is when an edge is dragged outward, and the canvas grows into it.
+
+The boundary is drawn as hairlines with the thirds marked inside it, not as the heavy two-toned outline a selected annotation gets. A thick line over the boundary hides the very pixels being decided about, and the dimmed surround already says which side of the line is which.
+
+Nothing reaches the document until the resize is applied, so the whole negotiation is one undo step or none, and a resize abandoned costs nothing. Applying and abandoning are offered on a small bar that sits on the mat beside the picture, under it where there is room and above or to one side of it where there is not. It is never on the picture: the mat is the part of the window where nothing happens, which is exactly where a question about the picture belongs, and the rule that nothing floats over the capture holds here as everywhere else. The bar floats on a layer that asks for no size of its own, since anything that hands its extent up the tree becomes a size the window has to satisfy, and a bar that widened the window would move the picture and so move itself. Enter and Escape answer the question too.
+
+The surface follows the canvas exactly, both ways. Letting it keep the largest extent a drag had reached would leave grey where the canvas has been but no longer is, which says "something was cropped here" about a place where nothing was. The picture still does not move while an edge is dragged: the scale is frozen for the length of the drag, and the window places the surface by hand so that the capture stays exactly where it is on screen whichever way the boundary is going. A surface that refits as the canvas grows would take the picture out from under the pointer that is sizing it, and the drag would chase its own tail. Letting go returns the scale to whatever shows all of it, which is the one moment where moving the picture costs nothing.
+
+Transparency is drawn as a chequerboard on the editing canvas and as nothing at all in an export, which is the same split as a blurred region's hairline edge. The affordance belongs to editing; the picture is the picture. JPEG has no alpha, so what would have been transparent is filled with white on the way out rather than arriving black.
+
+## Cutting a band out
+
+A screenshot of a phone or a long page often has a stretch in the middle that nobody needs: a gap, a repeated header, half a screen of nothing. Dragging down the picture with the cut tool marks a band of rows and dragging across it marks a band of columns, and what is left closes up. Which way it runs can also be said outright, because working it out from the drag is right nearly always and useless for a band a few pixels across, where the answer changes with every twitch of the hand. Left to itself it takes the first direction the drag commits to and holds it until the other is clearly meant, rather than swapping on every movement.
+
+Letting go takes the band. Escape abandons it, and it is the only thing that does: a drag ends down two paths, the release and the loss of capture, and the two cannot be allowed to disagree about what a finished drag means.
+
+It is geometry, not a pixel edit, for the same reason a crop is. `original.png` is never touched; the band goes into the document, and from then on the picture is drawn in pieces with that band skipped and everything after it shifted up or left by what the band took. Taking the cut back out puts the picture back exactly as it was.
+
+That leaves two coordinate systems, and the split is what keeps the cost down. Capture coordinates are what the document is written in and what every annotation is positioned against, and they never renumber, so making a cut moves nothing that was drawn. Laid coordinates are what ends up on screen and in the file, with the bands closed. Everything drawn goes one way through the mapping and everything pointed at comes back the other.
+
+Drawing a piece at a time is what makes a cut cost nothing anywhere else. Each piece is the whole picture drawn shifted and clipped to its own band, so a blur, an arrow or a line of text that happens to straddle a cut comes out as its two halves in the right places without any of them knowing that cuts exist. With nothing cut it is one piece with no shift, which is the same drawing as before any of this was added.
+
+A cut that has been made leaves no mark, on the canvas or in the export. It is simply a shorter picture: a line drawn where the join is would be the editor pointing at its own work, when there is nothing wrong with the picture at that spot and nothing there to do anything about. How many cuts a snapshot has is on the status line for the times that matters.
+
+## Zoom and panning
+
+The wheel zooms rather than scrolls, which is the opposite of the toolkit's default and is deliberate: a screenshot at fit is the normal state, and the reason to reach for the wheel over a picture is almost always to look closer at one part of it. It zooms about the pointer, since the thing being looked at is under the pointer and should still be there afterwards, which means a scroll offset worked out after the layout has caught up rather than a scale set and left. Shift and the wheel are left to the scroll viewer, so a picture too big for the window still has a wheel gesture that pans it.
+
+Zoom moves along a ladder rather than by a percentage a notch, for the buttons, the keys and the wheel alike. The sizes worth having are few, and landing on 100% exactly matters more than being able to reach 87%. It stops at 400%, which is close enough to aim an arrow's tip or a blur's edge at one particular pixel; past that the screen is showing magnified pixels rather than the picture.
+
+Holding space turns whatever tool is in hand into a hand, and dragging then moves the picture rather than drawing on it. Every editor with a canvas larger than its window has this gesture, for the same reason: a scroll bar is a poor way to nudge a picture along, and a tool that has to be switched to and back is worse. The movement is measured against the window rather than against the canvas, since the canvas is being scrolled by the very movement being measured, and it is applied step by step so that a pan run into the edge of the picture and back does not have to work off a distance the picture never travelled. A window that loses focus with the key still down drops the mode, because a key held by a window that has gone away is never reported as being let go.
+
 Blur strength is stored 1 to 100 and squared into a gaussian sigma, not stored as sigma. Sigma is only interesting between roughly 0.5 and 8, so a linear slider spends its bottom on invisible changes and its top on a region that is already flat grey. Squaring puts fine control where small differences are visible and still reaches a full redaction at the end.
 
 A blurred region carries a hairline edge and a level caption on the canvas but not in an export. Both say where the object is and how hard it is blurred, which is editing chrome: an exported screenshot must not come out with a label printed across the thing being hidden. This is the one place where canvas and export deliberately differ, and it is limited to affordances, never to the picture.
@@ -126,7 +174,7 @@ Anything already drawn can be selected whatever tool is active. Requiring a swit
 |---|---|
 | `~/Pictures/snapshotkit/` | Exports. Images the user deliberately kept, and the only directory they are expected to browse. |
 | `~/.local/share/snapshotkit/snapshots/` | `.ssk` working documents. |
-| `~/.local/state/snapshotkit/` | Restore token, keybinding backup, and eventually the library index. |
+| `~/.local/state/snapshotkit/` | Restore token, keybinding backup, what the editor was last doing, and eventually the library index. |
 | `$XDG_RUNTIME_DIR/snapshotkit/` | The shared frame. tmpfs, so RAM, cleared on logout. |
 
 Snapshots sit in `XDG_DATA_HOME` rather than Pictures because they are application data, not photographs, and a folder full of them would bury the images the user actually wants. They are not cache either: a snapshot cannot be regenerated, so losing one loses work. Keeping them in an ordinary folder means anyone can open it and delete from it, and backups already cover it.
@@ -139,10 +187,12 @@ The interface follows the Industry design system, whose handoff and token sheet 
 
 Three deliberate departures from the handoff, each for a reason worth keeping:
 
-- **Annotations default to red, not the steel accent.** The single-accent rule governs the application's own surfaces. An annotation is a mark on somebody else's screenshot: it has to read as deliberate against arbitrary pixels underneath, and red is the convention every reader of a screenshot already knows.
+- **Annotations default to red, not the steel accent.** The single-accent rule governs the application's own surfaces. An annotation is a mark on somebody else's screenshot: it has to read as deliberate against arbitrary pixels underneath, and red is the convention every reader of a screenshot already knows. Their palette leaves the tonal ramps behind for the same reason: it offers true black and true white, which is what a fill or a plate over a light or a dark screenshot usually wants, and then the few colours a screenshot is actually marked up in. Two swatches a few points apart from each other and from black are a choice nobody can make on sight.
 - **Eight resize handles, not six.** The design's corners and top/bottom mid-points leave no way to change one horizontal edge without also moving a corner. The two extra handles resize width alone.
 - **Arrows are straight.** The mock draws a curved arrow. Curvature needs a third control point in the document and a way to drag it, which is a feature rather than a finish, so it is not built.
 
 Searching and tagging in the library are deferred rather than dropped. A search worth having looks inside documents for text drawn on a capture, which wants an index rather than several hundred archives opened per keystroke.
 
 The library index, when it exists, is a SQLite cache for search and thumbnails, rebuildable from the files and never the source of truth.
+
+That index is the only thing here that wants a database. What the editor remembers between sessions, which today is the styles on its band, is a small JSON file in the state directory: there is nothing in it to query and nothing relational, it is read once when a window opens and rewritten when a row changes, and a database would buy indexes and transactions it has no use for at the price of a dependency, a schema and its migrations. Nothing in it is important enough to interrupt anyone over either, so a file that cannot be read leaves the editor with its defaults and one that cannot be written leaves the session as it was.

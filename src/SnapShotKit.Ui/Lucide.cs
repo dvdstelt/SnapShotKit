@@ -60,6 +60,22 @@ public static class Lucide
     /// <summary>circle with a one in it. The numbered marker, drawn rather than taken from the set, which has no numbered disc.</summary>
     public const string Step = "M12,3 A9,9 0 1 1 11.9,3 Z M10.6,9.6 L12.6,8.4 L12.6,15.6 M10.6,15.6 L14.6,15.6";
 
+    /// <summary>chevron-down. Opens what is behind a control, such as the rest of a gallery.</summary>
+    public const string More = "M6,9 L12,15 L18,9";
+
+    /// <summary>plus. Zooming in.</summary>
+    public const string Plus = "M5,12 H19 M12,5 V19";
+
+    /// <summary>minus. Zooming out.</summary>
+    public const string Minus = "M5,12 H19";
+
+    /// <summary>scissors. Cutting a band out of the picture.</summary>
+    public const string Cut = "M9,6 A3,3 0 1 1 3,6 A3,3 0 1 1 9,6 Z M8.12,8.12 L12,12 M20,4 L8.12,15.88 "
+        + "M9,18 A3,3 0 1 1 3,18 A3,3 0 1 1 9,18 Z M14.8,14.8 L20,20";
+
+    /// <summary>crop. Resizing the canvas.</summary>
+    public const string Crop = "M6,2 V16 A2,2 0 0 0 8,18 H22 M18,22 V8 A2,2 0 0 0 16,6 H2";
+
     /// <summary>folder. The library.</summary>
     public const string Library = "M4,20 A2,2 0 0 1 2,18 V5 A2,2 0 0 1 4,3 H9 L12,6 H20 A2,2 0 0 1 22,8 V18 A2,2 0 0 1 20,20 Z";
 

@@ -20,6 +20,20 @@ public abstract class Annotation
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
 
     public abstract Annotation Copy();
+
+    /// <summary>
+    /// Takes on another annotation's look, leaving its own geometry and its place in the document
+    /// alone.
+    ///
+    /// What counts as the look is each kind's own business, which is why this lives here rather
+    /// than in the band that offers the ready-made ones. A style is a complete look and not a
+    /// suggestion: it sets everything it covers, so picking one twice gives the same annotation
+    /// both times.
+    /// </summary>
+    public abstract void AdoptStyle(Annotation style);
+
+    /// <summary>Whether it already looks exactly like the given one. False for a different kind of annotation.</summary>
+    public abstract bool WearsStyle(Annotation style);
 }
 
 /// <summary>
@@ -61,6 +75,19 @@ public sealed class ArrowAnnotation : Annotation
         Id = Id, X1 = X1, Y1 = Y1, X2 = X2, Y2 = Y2,
         Color = Color, Thickness = Thickness, DoubleHeaded = DoubleHeaded
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is ArrowAnnotation arrow)
+        {
+            Color = arrow.Color;
+            Thickness = arrow.Thickness;
+            DoubleHeaded = arrow.DoubleHeaded;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is ArrowAnnotation arrow
+        && Color == arrow.Color && Thickness == arrow.Thickness && DoubleHeaded == arrow.DoubleHeaded;
 }
 
 public sealed class BlurAnnotation : RectAnnotation
@@ -97,6 +124,16 @@ public sealed class BlurAnnotation : RectAnnotation
     {
         Id = Id, X = X, Y = Y, Width = Width, Height = Height, Strength = Strength
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is BlurAnnotation blur)
+        {
+            Strength = blur.Strength;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is BlurAnnotation blur && Strength == blur.Strength;
 }
 
 public sealed class BoxAnnotation : RectAnnotation
@@ -119,6 +156,19 @@ public sealed class BoxAnnotation : RectAnnotation
         Id = Id, X = X, Y = Y, Width = Width, Height = Height,
         BorderColor = BorderColor, BorderThickness = BorderThickness, FillColor = FillColor
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is BoxAnnotation box)
+        {
+            BorderColor = box.BorderColor;
+            BorderThickness = box.BorderThickness;
+            FillColor = box.FillColor;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is BoxAnnotation box
+        && BorderColor == box.BorderColor && BorderThickness == box.BorderThickness && FillColor == box.FillColor;
 }
 
 public sealed class TextAnnotation : Annotation
@@ -153,6 +203,24 @@ public sealed class TextAnnotation : Annotation
         Id = Id, X = X, Y = Y, Text = Text, FontFamily = FontFamily, FontSize = FontSize, Color = Color,
         Background = Background, BackgroundPadding = BackgroundPadding
     };
+
+    /// <summary>
+    /// The face is left out of it, deliberately: there is no way to choose one on the band, so a
+    /// style that set it could only ever take away a choice made somewhere else.
+    /// </summary>
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is TextAnnotation text)
+        {
+            Color = text.Color;
+            FontSize = text.FontSize;
+            Background = text.Background;
+            BackgroundPadding = text.BackgroundPadding;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is TextAnnotation text
+        && Color == text.Color && FontSize == text.FontSize && Background == text.Background;
 }
 
 /// <summary>
@@ -183,10 +251,75 @@ public sealed class StepAnnotation : Annotation
     {
         Id = Id, X = X, Y = Y, Number = Number, Diameter = Diameter, Color = Color
     };
+
+    /// <summary>The number is not part of the look. It says which step this is, which no style knows.</summary>
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is StepAnnotation step)
+        {
+            Color = step.Color;
+            Diameter = step.Diameter;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is StepAnnotation step
+        && Color == step.Color && Diameter == step.Diameter;
 }
 
-public sealed class CanvasSize
+/// <summary>
+/// Which way a cut runs, which is to say what it takes out of the picture.
+///
+/// Written out by name rather than as a number, for the same reason a colour is written as hex:
+/// the document is meant to be readable and diffable, and "1" says nothing about which way a band
+/// was cut.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CutAxis>))]
+public enum CutAxis
 {
+    /// <summary>A band across the picture, taking rows out of it, so what is left is shorter.</summary>
+    Rows,
+
+    /// <summary>A band down the picture, taking columns out of it, so what is left is narrower.</summary>
+    Columns
+}
+
+/// <summary>
+/// A band cut out of the picture, in capture pixels.
+///
+/// Not a pixel edit: the capture is drawn in pieces with this band skipped and everything after it
+/// closed up. Taking the band out of the document puts the picture back exactly as it was, which is
+/// the same promise every other kind of editing here makes.
+/// </summary>
+public sealed class CutBand
+{
+    public CutAxis Axis { get; set; }
+
+    /// <summary>Where the band starts, across or down the capture depending on the axis.</summary>
+    public double At { get; set; }
+
+    /// <summary>How much it takes.</summary>
+    public double Extent { get; set; }
+
+    public CutBand Copy() => new() { Axis = Axis, At = At, Extent = Extent };
+}
+
+/// <summary>
+/// The canvas: the rectangle that actually gets exported, expressed in image pixels.
+///
+/// It is a rectangle rather than a size because it no longer has to coincide with the capture. The
+/// canvas can be pulled in to crop the picture, or pushed out past it to add space, and what it
+/// adds is transparent. <see cref="X"/> and <see cref="Y"/> say where its top-left corner sits
+/// relative to the capture's, so a canvas wider than the capture has a negative one.
+///
+/// Keeping the origin on the capture rather than on the canvas is what makes resizing cheap: every
+/// annotation is positioned against the picture it was drawn on, so moving the canvas moves nothing
+/// else. Documents written before any of this existed have no offset at all, and zero is precisely
+/// what they meant.
+/// </summary>
+public sealed class CanvasArea
+{
+    public int X { get; set; }
+    public int Y { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
 }
@@ -201,19 +334,32 @@ public sealed class SnapshotDocument
     /// order of the layers, so that a blur could never hide an arrow. Version 2 draws the layers in
     /// the order they are in, which is what makes moving an object forward or back mean anything.
     /// A version 1 document is reordered as it is opened, so it still looks exactly as it did.
+    ///
+    /// Version 4 added the bands cut out of the picture. An older document has none, which is what
+    /// it meant, so there is nothing to fix up.
     /// </summary>
-    public const int Current = 2;
+    public const int Current = 4;
 
     public int Version { get; set; } = Current;
 
-    public CanvasSize Canvas { get; set; } = new();
+    public CanvasArea Canvas { get; set; } = new();
 
     public List<Annotation> Layers { get; set; } = [];
+
+    /// <summary>
+    /// The bands cut out of the picture, in capture pixels.
+    ///
+    /// Kept apart from the layers because a cut is not something drawn on the picture: it changes
+    /// where the picture is, which is why it belongs beside the canvas rather than among the things
+    /// standing on it.
+    /// </summary>
+    public List<CutBand> Cuts { get; set; } = [];
 
     public SnapshotDocument Copy() => new()
     {
         Version = Version,
-        Canvas = new CanvasSize { Width = Canvas.Width, Height = Canvas.Height },
-        Layers = [.. Layers.Select(layer => layer.Copy())]
+        Canvas = new CanvasArea { X = Canvas.X, Y = Canvas.Y, Width = Canvas.Width, Height = Canvas.Height },
+        Layers = [.. Layers.Select(layer => layer.Copy())],
+        Cuts = [.. Cuts.Select(cut => cut.Copy())]
     };
 }
