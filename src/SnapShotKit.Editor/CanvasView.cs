@@ -968,13 +968,36 @@ public sealed class CanvasView : Decorator
         // tool would only put handles on the picture that this one does not use.
         Select(null);
 
-        var proposed = CanvasRect();
-        resizing = new CanvasResize { Proposed = proposed, Frame = FrameAround(proposed, CaptureRect()) };
+        resizing = new CanvasResize();
+        SeedResize();
+    }
 
-        // Left for the first measure to work out, since it depends on the room available.
+    /// <summary>
+    /// Points an open resize back at the canvas the document now has.
+    ///
+    /// A proposal is not in the undo history, because nothing reaches the document until it is
+    /// applied. A step through that history therefore leaves the proposal describing a canvas that
+    /// no longer exists, and the boundary on screen and the size fields go on offering it: pressing
+    /// Enter would then write back the very crop that was just undone. Seeded afresh, they show
+    /// what was restored, and the mode carries on rather than being thrown away underneath someone.
+    /// </summary>
+    public void SeedResize()
+    {
+        if (resizing is not { } session)
+        {
+            return;
+        }
+
+        session.Proposed = CanvasRect();
+        session.Frame = FrameAround(session.Proposed, CaptureRect());
+
+        // Left for the next measure to work out, since it depends on the room available.
         sessionScale = 0;
 
         CanvasProposalChanged?.Invoke();
+
+        InvalidateMeasure();
+        InvalidateVisual();
     }
 
     /// <summary>
