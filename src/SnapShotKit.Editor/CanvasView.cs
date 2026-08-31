@@ -1238,8 +1238,20 @@ public sealed class CanvasView : Decorator
 
     void Cut(Point to)
     {
-        var across = Math.Abs(to.X - cutFrom.X);
-        var down = Math.Abs(to.Y - cutFrom.Y);
+        // Whole pixels, the same way the canvas is, and for the same reason: a band is a stretch of
+        // rows or columns, and there is no such thing as three fifths of a row. Both ends are
+        // rounded rather than the width, so a band always starts and finishes on a real pixel.
+        //
+        // A fractional band would be paid for everywhere afterwards. The picture past the join is
+        // drawn shifted by what the band took, and shifted by a fraction it lands between pixels
+        // and is resampled, which on a screenshot means soft text below every cut. The export would
+        // round the height it allocates while drawing an area that was never rounded, and the size
+        // fields would keep handing back a number one short of the one typed into them.
+        var from = new Point(Math.Round(cutFrom.X), Math.Round(cutFrom.Y));
+        var at = new Point(Math.Round(to.X), Math.Round(to.Y));
+
+        var across = Math.Abs(at.X - from.X);
+        var down = Math.Abs(at.Y - from.Y);
 
         var axis = Defaults.CutDirection ?? cutting?.Axis switch
         {
@@ -1250,8 +1262,8 @@ public sealed class CanvasView : Decorator
         };
 
         cutting = axis == CutAxis.Rows
-            ? new CutBand { Axis = CutAxis.Rows, At = Math.Min(cutFrom.Y, to.Y), Extent = down }
-            : new CutBand { Axis = CutAxis.Columns, At = Math.Min(cutFrom.X, to.X), Extent = across };
+            ? new CutBand { Axis = CutAxis.Rows, At = Math.Min(from.Y, at.Y), Extent = down }
+            : new CutBand { Axis = CutAxis.Columns, At = Math.Min(from.X, at.X), Extent = across };
 
         InvalidateVisual();
     }
