@@ -1412,6 +1412,12 @@ public sealed class CanvasView : Decorator
     /// what the eye sees and what the hand goes for. The corners take a longer stretch of both
     /// their sides, so the one place two grips meet is not a pixel hunt. Either side of the line
     /// counts, since the surround is on show in this mode and is as good a place to aim at.
+    ///
+    /// How far a corner reaches is capped at half the side it reaches along, so that the two ends
+    /// of a side can never both claim the same stretch of it. Without the cap, a canvas narrower
+    /// than two corners answered every question with its left edge, and aiming at the right one to
+    /// pull the canvas back out dragged the left one the other way instead. It takes a small canvas
+    /// to manage that, or an ordinary one seen at ten percent.
     /// </summary>
     DragKind HitCanvasEdge(Point view, CanvasResize session)
     {
@@ -1430,8 +1436,11 @@ public sealed class CanvasView : Decorator
             return DragKind.None;
         }
 
-        var horizontal = view.X <= rect.X + CornerReach ? -1 : view.X >= rect.Right - CornerReach ? 1 : 0;
-        var vertical = view.Y <= rect.Y + CornerReach ? -1 : view.Y >= rect.Bottom - CornerReach ? 1 : 0;
+        var alongX = Math.Min(CornerReach, rect.Width / 2);
+        var alongY = Math.Min(CornerReach, rect.Height / 2);
+
+        var horizontal = view.X <= rect.X + alongX ? -1 : view.X >= rect.Right - alongX ? 1 : 0;
+        var vertical = view.Y <= rect.Y + alongY ? -1 : view.Y >= rect.Bottom - alongY ? 1 : 0;
 
         return (horizontal, vertical) switch
         {
