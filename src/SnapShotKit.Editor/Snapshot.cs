@@ -97,9 +97,18 @@ public sealed class Snapshot : IDisposable
     /// out beyond it. An older document has no offset, and zero is exactly what it meant: the canvas
     /// was the capture. Version 4 added the bands cut out of the picture, and an older document has
     /// none. Neither needs a fix-up, only the version.
+    ///
+    /// A document from further ahead than this build is left exactly as it is, version and all.
+    /// There is nothing here that could repair one, and stamping it back down to this version would
+    /// be this build telling a later one that migrations it has never heard of have already run.
     /// </summary>
     static void Migrate(SnapshotDocument document)
     {
+        if (document.Version >= SnapshotDocument.Current)
+        {
+            return;
+        }
+
         if (document.Version < 2)
         {
             var blurs = document.Layers.OfType<BlurAnnotation>().Cast<Annotation>().ToList();
