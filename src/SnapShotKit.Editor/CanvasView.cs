@@ -191,15 +191,6 @@ public sealed class CanvasView : Decorator
 
     static readonly IPen GuidePen = new Pen(new SolidColorBrush(Color.FromArgb(90, 255, 255, 255)), 1);
 
-    // Where the picture has been closed up. Dashed, because a join is not an edge of anything: it
-    // is two parts of the picture that were not next to each other before.
-    static readonly IPen JoinShadow = new Pen(new SolidColorBrush(Color.FromArgb(110, 0, 0, 0)), 1);
-
-    static readonly IPen JoinPen = new Pen(new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)), 1)
-    {
-        DashStyle = new DashStyle([3, 3], 0)
-    };
-
     static readonly IBrush HandleFill = SnapShotKit.Ui.Tokens.BgBrush;
     static readonly IPen HandleBorder = new Pen(SnapShotKit.Ui.Tokens.Accent700Brush, 1);
 
@@ -1337,26 +1328,15 @@ public sealed class CanvasView : Decorator
     }
 
     /// <summary>
-    /// The band being marked, and where the picture has already been closed up.
+    /// The band being marked, while it is being marked and never after.
     ///
-    /// Both are editing chrome and neither is exported: a cut that has been made is simply a
-    /// shorter picture, and a seam painted across it would be the editor talking over the result.
-    /// The marks are drawn only while the tool is in hand, since at any other moment they would be
-    /// a line across a picture that has nothing wrong with it.
+    /// A cut that has been made leaves no mark at all. It is simply a shorter picture, and a line
+    /// drawn where the join is would be the editor pointing at its own work: there is nothing wrong
+    /// with the picture at that spot, and nothing there to do anything about. How many cuts a
+    /// snapshot has is on the status line for the times that matters.
     /// </summary>
     void DrawCutting(DrawingContext context, Rect target)
     {
-        foreach (var (at, axis) in snapshot.Layout.Joins())
-        {
-            var on = FromLaid(new Point(at, at));
-
-            var from = axis == CutAxis.Rows ? new Point(target.X, on.Y) : new Point(on.X, target.Y);
-            var to = axis == CutAxis.Rows ? new Point(target.Right, on.Y) : new Point(on.X, target.Bottom);
-
-            context.DrawLine(JoinShadow, from, to);
-            context.DrawLine(JoinPen, from, to);
-        }
-
         if (cutting is not { Extent: > 0 } band)
         {
             return;

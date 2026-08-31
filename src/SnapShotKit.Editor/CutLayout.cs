@@ -167,16 +167,4 @@ public sealed class CutLayout
     /// </summary>
     public double Widen(double from, double laidExtent, CutAxis axis) =>
         ToCapture(ToLaid(from, axis) + laidExtent, axis) - from;
-
-    /// <summary>Where each join falls once the cuts are closed, which is what the editing canvas marks.</summary>
-    public IEnumerable<(double At, CutAxis Axis)> Joins()
-    {
-        foreach (var axis in new[] { CutAxis.Rows, CutAxis.Columns })
-        {
-            foreach (var (at, _) in Bands(axis))
-            {
-                yield return (ToLaid(at, axis), axis);
-            }
-        }
-    }
 }

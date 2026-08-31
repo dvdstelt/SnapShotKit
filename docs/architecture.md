@@ -152,7 +152,7 @@ That leaves two coordinate systems, and the split is what keeps the cost down. C
 
 Drawing a piece at a time is what makes a cut cost nothing anywhere else. Each piece is the whole picture drawn shifted and clipped to its own band, so a blur, an arrow or a line of text that happens to straddle a cut comes out as its two halves in the right places without any of them knowing that cuts exist. With nothing cut it is one piece with no shift, which is the same drawing as before any of this was added.
 
-The join is marked on the editing canvas while the tool is in hand, and nowhere else. A cut that has been made is simply a shorter picture, and a seam painted across an export would be the editor talking over the result.
+A cut that has been made leaves no mark, on the canvas or in the export. It is simply a shorter picture: a line drawn where the join is would be the editor pointing at its own work, when there is nothing wrong with the picture at that spot and nothing there to do anything about. How many cuts a snapshot has is on the status line for the times that matters.
 
 ## Zoom and panning
 
