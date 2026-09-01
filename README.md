@@ -77,8 +77,12 @@ The panel menu offers a delayed capture, the editor and the snapshots folder.
 - [docs/packaging.md](docs/packaging.md) — building a package
 - [docs/spikes/](docs/spikes/) — what was actually measured, including the things that did not work
 
-## Licence
+## Licence and price
 
-GNU General Public License v3.0 or later. See [LICENSE](LICENSE).
+SnapShotKit is free to use while it is pre-1.0. From version 1.0.0 it will cost 15 euro, paid once, with updates included. There is no subscription and there will not be one.
+
+The source stays visible either way, and you are welcome to read it, build it and run what you have built. What you may not do is publish your own build or ship a modified version. Contributors with a merged pull request get a free perpetual licence, so nobody is charged for a bug they fixed themselves.
+
+See [LICENSE](LICENSE) for the terms and [CONTRIBUTING.md](CONTRIBUTING.md) for how contributions work. This is a source-available licence rather than an open source one, and it does not pretend otherwise. Version 0.1.0 was released under the GPL and remains available under those terms.
 
 The bundled Barlow and Barlow Condensed fonts are under the SIL Open Font License, which travels with them in `src/SnapShotKit.Ui/Assets/Fonts/OFL.txt`.
