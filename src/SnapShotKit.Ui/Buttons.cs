@@ -80,12 +80,8 @@ public static class Buttons
     /// </summary>
     public static Control Danger(string text, string? icon, Action clicked) =>
         Blueprint.Wrap(
-            Build(text, icon, Danger_, Tokens.BgBrush, Danger_, DangerPressed, clicked),
+            Build(text, icon, Tokens.DangerBrush, Tokens.BgBrush, Tokens.DangerBrush, Tokens.DangerPressedBrush, clicked),
             drawFrame: false);
-
-    static readonly IBrush Danger_ = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromRgb(0xC5, 0x30, 0x30));
-    static readonly IBrush DangerHover = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromRgb(0xB0, 0x2A, 0x2A));
-    static readonly IBrush DangerPressed = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromRgb(0x96, 0x24, 0x24));
 
     /// <summary>Everything that is not the one primary action.</summary>
     public static Control Secondary(string text, string? icon, Action clicked) =>
@@ -146,6 +142,6 @@ public static class Buttons
 
     static IBrush Hover(IBrush background) =>
         ReferenceEquals(background, Tokens.AccentBrush) ? Tokens.Accent600Brush
-        : ReferenceEquals(background, Danger_) ? DangerHover
+        : ReferenceEquals(background, Tokens.DangerBrush) ? Tokens.DangerHoverBrush
         : Tokens.Neutral200Brush;
 }

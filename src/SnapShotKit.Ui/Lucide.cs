@@ -53,6 +53,16 @@ public static class Lucide
     /// <summary>x. Cancel.</summary>
     public const string Cancel = "M18,6 L6,18 M6,6 L18,18";
 
+    /// <summary>
+    /// trash. Deleting a capture from disk.
+    ///
+    /// The plain one rather than trash-2, which rules the bin with two vertical lines. Those lines
+    /// sit two units apart on the 24 unit grid, so on the badge that appears over a thumbnail they
+    /// close up into a solid block and the whole glyph stops reading as a bin.
+    /// </summary>
+    public const string Delete = "M3,6 H21 M19,6 V20 A2,2 0 0 1 17,22 H7 A2,2 0 0 1 5,20 V6 "
+        + "M8,6 V4 A2,2 0 0 1 10,2 H14 A2,2 0 0 1 16,4 V6";
+
     /// <summary>monitor. Whole screen.</summary>
     public const string WholeScreen = "M4,3 H20 A2,2 0 0 1 22,5 V15 A2,2 0 0 1 20,17 H4 A2,2 0 0 1 2,15 V5 A2,2 0 0 1 4,3 Z "
         + "M8,21 H16 M12,17 V21";

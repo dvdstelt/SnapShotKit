@@ -121,5 +121,7 @@ public static class SnapshotLibrary
         }
     }
 
-    public static void Delete(SnapshotEntry entry) => File.Delete(entry.Path);
+    public static void Delete(SnapshotEntry entry) => Delete(entry.Path);
+
+    public static void Delete(string path) => File.Delete(path);
 }
