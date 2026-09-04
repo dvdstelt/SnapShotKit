@@ -109,6 +109,8 @@ public sealed class EditorWindow : Window
 
         recent = new RecentStrip();
         recent.Chosen += OpenSnapshot;
+        recent.CopyRequested += CopySnapshot;
+        recent.DeleteRequested += path => _ = DeleteSnapshotAsync(path);
 
         status = Labels.Body(string.Empty, 12, Tokens.Neutral600Brush);
 
@@ -927,6 +929,88 @@ public sealed class EditorWindow : Window
         {
             Report($"Could not copy: {exception.Message}");
         }
+    }
+
+    /// <summary>
+    /// Copies a capture the strip was asked about.
+    ///
+    /// The one on the canvas is copied as it stands, unsaved changes and all, because that is what
+    /// the user is looking at. Any other is rendered from its file, since what is on disk is the
+    /// whole of it.
+    /// </summary>
+    void CopySnapshot(string path)
+    {
+        if (string.Equals(path, snapshot.Path, StringComparison.Ordinal))
+        {
+            CopyToClipboard();
+            return;
+        }
+
+        try
+        {
+            using var other = Snapshot.Open(path);
+
+            // Both hold full-resolution bitmaps in native memory the collector cannot see, so a copy
+            // made from the strip releases them rather than leaving them to finalisers.
+            using var blurs = new BlurCache(other.OriginalPng);
+
+            var png = Export.ToPng(other, blurs);
+
+            Report(WaylandClipboard.TryCopyPng(png, out var error)
+                ? $"Copied {Path.GetFileName(path)} to the clipboard"
+                : $"Could not copy: {error}");
+        }
+        catch (Exception exception)
+        {
+            Report($"Could not copy {Path.GetFileName(path)}: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Deletes a capture the strip was asked about, off disk.
+    ///
+    /// Deleting the one on the canvas is allowed, and leaves it exactly where it is, marked unsaved.
+    /// Both alternatives are worse: refusing makes the capture the user is looking at the one that
+    /// cannot be tidied away, and closing the document throws away annotations the file never had.
+    /// Marked unsaved, saving writes it back, which is the way out of a deletion regretted.
+    /// </summary>
+    async Task DeleteSnapshotAsync(string path)
+    {
+        var name = Path.GetFileName(path);
+        var onCanvas = string.Equals(path, snapshot.Path, StringComparison.Ordinal);
+
+        // Deleting a capture is not undoable, so it gets a question. The wording says what will be
+        // gone rather than asking whether the user is sure.
+        var confirmed = await Confirm.DeleteAsync(this, "Delete capture", onCanvas
+            ? $"{name} will be deleted permanently.\nIt stays on the canvas as unsaved work, so saving would write it back."
+            : $"{name} will be deleted permanently.\nAny images you already exported are unaffected.");
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            SnapshotLibrary.Delete(path);
+        }
+        catch (Exception exception)
+        {
+            Report($"Could not delete {name}: {exception.Message}");
+            return;
+        }
+
+        if (onCanvas)
+        {
+            dirty = true;
+        }
+
+        RefreshRecent();
+
+        // The chrome first and the message second: the readouts overwrite the status line, so
+        // reporting before them would say something and then immediately take it back.
+        UpdateChrome();
+        Report(onCanvas ? $"Deleted {name}, which is still on the canvas and unsaved" : $"Deleted {name}");
     }
 
     /// <summary>Asks the daemon for a capture, the same way pressing Print does.</summary>

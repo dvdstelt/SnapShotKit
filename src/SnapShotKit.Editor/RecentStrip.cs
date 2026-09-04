@@ -21,15 +21,31 @@ namespace SnapShotKit.Editor;
 /// The tiles are built by hand rather than through a ListBox. A list control brings a selection
 /// visual of its own — a filled rounded block — which is precisely what this design does not want,
 /// and suppressing it is more work than laying out a row of tiles.
+///
+/// The strip asks rather than acts: it raises what the user chose and leaves opening, copying and
+/// deleting to the window, which is the only thing that knows whether the capture in question is
+/// the one on the canvas.
 /// </summary>
 public sealed class RecentStrip : Border
 {
     const double TileWidth = 116;
     const double TileHeight = 52;
 
+    /// <summary>The delete control on a tile's corner. Small, because the tile it sits on is 116 by 52.</summary>
+    const double BadgeSize = 20;
+
     readonly StackPanel tiles;
     readonly TextBlock caption;
     readonly TextBlock current;
+
+    /// <summary>
+    /// The context menu, built once and re-anchored to whichever tile it is asked for.
+    ///
+    /// One popup for the whole strip rather than one per tile, and never moved in the tree: a popup
+    /// put under a new parent stops opening and says nothing about it, and the tiles are thrown away
+    /// and rebuilt every time the strip is filled. Only its placement target changes.
+    /// </summary>
+    readonly Popup menu;
 
     public RecentStrip()
     {
@@ -42,11 +58,27 @@ public sealed class RecentStrip : Border
         current = Labels.Body(string.Empty, 12.5, Tokens.Neutral700Brush);
         current.HorizontalAlignment = HorizontalAlignment.Right;
 
+        menu = new Popup
+        {
+            // Above the tile it was asked for. The strip is the bottom band of the window, so there
+            // is never room below it, and a menu anchored to the tile lands in the same place every
+            // time rather than wherever the pointer happened to be.
+            Placement = PlacementMode.TopEdgeAlignedLeft,
+            IsLightDismissEnabled = true,
+            OverlayDismissEventPassThrough = true
+        };
+
         var captionRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         Grid.SetColumn(caption, 0);
         Grid.SetColumn(current, 1);
         captionRow.Children.Add(caption);
         captionRow.Children.Add(current);
+
+        // A popup has to live in the visual tree to be hosted at all. A zero-sized cell sharing the
+        // caption row asks for no space of its own, which a row in the stack above the tiles would.
+        var host = new Panel { Width = 0, Height = 0, Children = { menu } };
+        Grid.SetColumn(host, 0);
+        captionRow.Children.Add(host);
 
         tiles = new StackPanel { Orientation = Orientation.Horizontal, Spacing = Tokens.Space.S4 };
 
@@ -64,7 +96,14 @@ public sealed class RecentStrip : Border
         };
     }
 
+    /// <summary>The capture to put on the canvas.</summary>
     public event Action<string>? Chosen;
+
+    /// <summary>The capture to put on the clipboard, annotations and all.</summary>
+    public event Action<string>? CopyRequested;
+
+    /// <summary>The capture to delete from disk.</summary>
+    public event Action<string>? DeleteRequested;
 
     /// <summary>Fills the strip, leaving the open snapshot in place and marked.</summary>
     public void Show(IReadOnlyList<SnapshotItem> items, string openPath)
@@ -73,6 +112,10 @@ public sealed class RecentStrip : Border
 
         var open = items.FirstOrDefault(item => string.Equals(item.Entry.Path, openPath, StringComparison.Ordinal));
         current.Text = open is null ? string.Empty : $"{open.Time} — {open.ShortName}";
+
+        // Whatever it was offered on is about to be thrown away, and a menu left standing over a
+        // rebuilt strip would act on a tile that is no longer there.
+        menu.IsOpen = false;
 
         tiles.Children.Clear();
 
@@ -114,6 +157,8 @@ public sealed class RecentStrip : Border
         var picture = new Image { Stretch = Stretch.UniformToFill };
         picture.Bind(Image.SourceProperty, new Avalonia.Data.Binding(nameof(SnapshotItem.Thumbnail)) { Source = item });
 
+        var badge = DeleteBadge(item);
+
         var frame = new Border
         {
             Width = TileWidth,
@@ -121,7 +166,7 @@ public sealed class RecentStrip : Border
             Background = Tokens.Neutral200Brush,
             CornerRadius = Tokens.Radius,
             ClipToBounds = true,
-            Child = picture,
+            Child = new Panel { Children = { picture, badge } },
             BorderBrush = open ? Tokens.AccentBrush : Brushes.Transparent,
             BorderThickness = new Thickness(open ? 2 : 0),
             BoxShadow = open ? Tokens.ShadowMd : default
@@ -140,10 +185,104 @@ public sealed class RecentStrip : Border
 
         ToolTip.SetTip(tile, item.Name);
 
-        // One click opens. These are cheap to switch between and the whole point of the strip is to
-        // move quickly, so asking for a double click would be friction for its own sake.
-        tile.PointerPressed += (_, _) => Chosen?.Invoke(item.Entry.Path);
+        // The badge is a child of the tile, so moving onto it is not leaving the tile: the pointer
+        // can travel from the picture to the button without the button disappearing under it.
+        tile.PointerEntered += (_, _) => badge.IsVisible = true;
+        tile.PointerExited += (_, _) => badge.IsVisible = false;
+
+        tile.PointerPressed += (_, e) =>
+        {
+            var properties = e.GetCurrentPoint(tile).Properties;
+
+            if (properties.IsRightButtonPressed)
+            {
+                ShowMenu(item, tile);
+                return;
+            }
+
+            // One click opens. These are cheap to switch between and the whole point of the strip is
+            // to move quickly, so asking for a double click would be friction for its own sake.
+            if (properties.IsLeftButtonPressed)
+            {
+                Chosen?.Invoke(item.Entry.Path);
+            }
+        };
 
         return tile;
+    }
+
+    /// <summary>
+    /// The delete control that appears on a tile while the pointer is over it.
+    ///
+    /// Hidden until then, because the strip is a row of pictures and a permanent row of buttons over
+    /// them would compete with the only thing the strip is for. It fills with the system's one red
+    /// under the pointer, so the control that destroys a capture never looks like the tile that
+    /// opens it, and it swallows its own click: a press that both deleted a capture and opened it
+    /// would be the worst of both.
+    /// </summary>
+    Border DeleteBadge(SnapshotItem item)
+    {
+        var quiet = Lucide.Icon(Lucide.Delete, 13, Tokens.Neutral800Brush);
+        var alarmed = Lucide.Icon(Lucide.Delete, 13, Tokens.BgBrush);
+
+        var badge = new Border
+        {
+            Width = BadgeSize,
+            Height = BadgeSize,
+            IsVisible = false,
+            Background = Tokens.BgBrush,
+            BorderBrush = Tokens.DividerBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = Tokens.Radius,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, Tokens.Space.S1, Tokens.Space.S1, 0),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = quiet
+        };
+
+        ToolTip.SetTip(badge, $"Delete {item.Name}");
+
+        badge.PointerEntered += (_, _) =>
+        {
+            badge.Background = Tokens.DangerBrush;
+            badge.BorderBrush = Tokens.DangerBrush;
+            badge.Child = alarmed;
+        };
+
+        badge.PointerExited += (_, _) =>
+        {
+            badge.Background = Tokens.BgBrush;
+            badge.BorderBrush = Tokens.DividerBrush;
+            badge.Child = quiet;
+        };
+
+        badge.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+
+            if (e.GetCurrentPoint(badge).Properties.IsLeftButtonPressed)
+            {
+                DeleteRequested?.Invoke(item.Entry.Path);
+            }
+        };
+
+        return badge;
+    }
+
+    void ShowMenu(SnapshotItem item, Control tile)
+    {
+        menu.IsOpen = false;
+        menu.PlacementTarget = tile;
+
+        menu.Child = PopupMenu.Build(
+        [
+            MenuEntry.Item("Open", null, () => Chosen?.Invoke(item.Entry.Path)),
+            MenuEntry.Separator,
+            MenuEntry.Item("Copy", null, () => CopyRequested?.Invoke(item.Entry.Path)),
+            MenuEntry.Item("Delete", null, () => DeleteRequested?.Invoke(item.Entry.Path))
+        ], menu);
+
+        menu.IsOpen = true;
     }
 }
