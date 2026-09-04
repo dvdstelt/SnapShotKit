@@ -102,8 +102,13 @@ public sealed class RecentStrip : Border
     /// <summary>The capture to put on the clipboard, annotations and all.</summary>
     public event Action<string>? CopyRequested;
 
-    /// <summary>The capture to delete from disk.</summary>
-    public event Action<string>? DeleteRequested;
+    /// <summary>
+    /// The capture to delete from disk, and whether the user has already answered for it.
+    ///
+    /// Shift on the badge is that answer. It skips the question rather than doing anything
+    /// different, so somebody who never discovers it loses nothing by not knowing.
+    /// </summary>
+    public event Action<string, bool>? DeleteRequested;
 
     /// <summary>Fills the strip, leaving the open snapshot in place and marked.</summary>
     public void Show(IReadOnlyList<SnapshotItem> items, string openPath)
@@ -241,7 +246,7 @@ public sealed class RecentStrip : Border
             Child = quiet
         };
 
-        ToolTip.SetTip(badge, $"Delete {item.Name}");
+        ToolTip.SetTip(badge, $"Delete {item.Name}\nShift-click to delete without being asked");
 
         badge.PointerEntered += (_, _) =>
         {
@@ -263,7 +268,7 @@ public sealed class RecentStrip : Border
 
             if (e.GetCurrentPoint(badge).Properties.IsLeftButtonPressed)
             {
-                DeleteRequested?.Invoke(item.Entry.Path);
+                DeleteRequested?.Invoke(item.Entry.Path, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
             }
         };
 
@@ -280,7 +285,9 @@ public sealed class RecentStrip : Border
             MenuEntry.Item("Open", null, () => Chosen?.Invoke(item.Entry.Path)),
             MenuEntry.Separator,
             MenuEntry.Item("Copy", null, () => CopyRequested?.Invoke(item.Entry.Path)),
-            MenuEntry.Item("Delete", null, () => DeleteRequested?.Invoke(item.Entry.Path))
+            // The menu always asks. A menu item is chosen from a list rather than aimed at, and
+            // whatever was held to open the menu is long released by the time one is picked.
+            MenuEntry.Item("Delete", null, () => DeleteRequested?.Invoke(item.Entry.Path, false))
         ], menu);
 
         menu.IsOpen = true;

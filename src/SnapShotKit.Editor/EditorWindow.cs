@@ -110,7 +110,7 @@ public sealed class EditorWindow : Window
         recent = new RecentStrip();
         recent.Chosen += OpenSnapshot;
         recent.CopyRequested += CopySnapshot;
-        recent.DeleteRequested += path => _ = DeleteSnapshotAsync(path);
+        recent.DeleteRequested += (path, answered) => _ = DeleteSnapshotAsync(path, answered);
 
         status = Labels.Body(string.Empty, 12, Tokens.Neutral600Brush);
 
@@ -974,14 +974,18 @@ public sealed class EditorWindow : Window
     /// cannot be tidied away, and closing the document throws away annotations the file never had.
     /// Marked unsaved, saving writes it back, which is the way out of a deletion regretted.
     /// </summary>
-    async Task DeleteSnapshotAsync(string path)
+    /// <param name="answered">
+    /// The user held shift, which is them answering the question in advance. Somebody clearing out a
+    /// run of junk captures should not have to say so once per capture.
+    /// </param>
+    async Task DeleteSnapshotAsync(string path, bool answered)
     {
         var name = Path.GetFileName(path);
         var onCanvas = string.Equals(path, snapshot.Path, StringComparison.Ordinal);
 
         // Deleting a capture is not undoable, so it gets a question. The wording says what will be
         // gone rather than asking whether the user is sure.
-        var confirmed = await Confirm.DeleteAsync(this, "Delete capture", onCanvas
+        var confirmed = answered || await Confirm.DeleteAsync(this, "Delete capture", onCanvas
             ? $"{name} will be deleted permanently.\nIt stays on the canvas as unsaved work, so saving would write it back."
             : $"{name} will be deleted permanently.\nAny images you already exported are unaffected.");
 
