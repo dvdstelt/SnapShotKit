@@ -51,6 +51,15 @@ public sealed class EditorWindow : Window
     readonly Panel matLayer = new();
 
     /// <summary>
+    /// What the mat shows when no capture is open.
+    ///
+    /// The window stays rather than closing itself. Deleting the capture on the canvas is an edit
+    /// to a library, not a reason to take away the window somebody is working in, and the strip
+    /// along the bottom is still full of captures to open.
+    /// </summary>
+    readonly Control nothing = NothingOnTheMat();
+
+    /// <summary>
     /// What floats over the mat, which today is only the bar that confirms a canvas resize.
     ///
     /// A canvas rather than an ordinary panel, because a canvas asks for no size of its own however
@@ -63,13 +72,21 @@ public sealed class EditorWindow : Window
     readonly Border confirmBar;
 
     /// <summary>The framed working surface, kept because a canvas drag has to place it by hand for as long as it lasts.</summary>
-    Blueprint framedCanvas;
+    Blueprint? framedCanvas;
 
     CancellationTokenSource thumbnailWork = new();
 
-    Snapshot snapshot;
-    BlurCache blurs;
-    CanvasView canvas;
+    /// <summary>
+    /// The open capture, or nothing.
+    ///
+    /// Nothing is a real state rather than an impossible one: deleting the capture on the canvas
+    /// leaves the editor with no document, and the window stays open around it. These three are
+    /// assigned and cleared together, so anything that acts on a capture only has to ask once.
+    /// </summary>
+    Snapshot? snapshot;
+
+    BlurCache? blurs;
+    CanvasView? canvas;
     EditorTool tool = EditorTool.Arrow;
 
     bool dirty;
@@ -85,13 +102,19 @@ public sealed class EditorWindow : Window
     /// <summary>Where the framed canvas sat when a canvas drag began, in the mat's own coordinates.</summary>
     Point pinned;
 
-    public EditorWindow(Snapshot snapshot)
+    /// <param name="opened">
+    /// Named for what it is rather than after the field it fills. The field can now hold nothing,
+    /// and a parameter of the same name would shadow it here: anything deferred from this
+    /// constructor would read the capture the window opened with for as long as the window lived,
+    /// long after it had been closed and disposed.
+    /// </param>
+    public EditorWindow(Snapshot opened)
     {
-        this.snapshot = snapshot;
-        blurs = new BlurCache(snapshot.OriginalPng);
-        canvas = new CanvasView(snapshot, blurs);
+        snapshot = opened;
+        blurs = new BlurCache(opened.OriginalPng);
+        canvas = new CanvasView(opened, blurs);
 
-        Title = $"SnapShotKit - {Path.GetFileName(snapshot.Path)}";
+        Title = $"SnapShotKit - {Path.GetFileName(opened.Path)}";
 
         // Wide enough for the band's busiest tool. A window that opens too narrow for its own
         // chrome starts by hiding a control the user has not been shown yet.
@@ -190,7 +213,7 @@ public sealed class EditorWindow : Window
 
         // A held key whose window goes away never reports being let go, and a hand left holding the
         // picture would then take the next click.
-        Deactivated += (_, _) => canvas.Panning = false;
+        Deactivated += (_, _) => { if (canvas is not null) canvas.Panning = false; };
 
         // On the mat rather than on the picture, so the wheel zooms anywhere over the working area
         // rather than only over whatever the picture happens to cover.
@@ -199,6 +222,66 @@ public sealed class EditorWindow : Window
         SetTool(EditorTool.Arrow);
         RefreshRecent();
         UpdateChrome();
+    }
+
+    static Control NothingOnTheMat()
+    {
+        var heading = Labels.Heading("NOTHING OPEN", 13, 0.18, Tokens.Neutral600Brush);
+        heading.HorizontalAlignment = HorizontalAlignment.Center;
+
+        var hint = Labels.Body("Choose a capture from the strip below, or press Print to take one.",
+            13, Tokens.Neutral500Brush);
+        hint.HorizontalAlignment = HorizontalAlignment.Center;
+
+        return new StackPanel
+        {
+            Spacing = Tokens.Space.S2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { heading, hint }
+        };
+    }
+
+    /// <summary>
+    /// Puts the editor back to holding nothing.
+    ///
+    /// What happens when the capture on the canvas is deleted. The document goes with its file
+    /// rather than staying behind as unsaved work: it has nowhere left to be saved to, and keeping
+    /// it would mean every capture opened afterwards had to step over a question about work the
+    /// user has already thrown away.
+    /// </summary>
+    void CloseDocument()
+    {
+        canvasHost.Children.Clear();
+        canvasHost.Children.Add(nothing);
+
+        // Both hold full-resolution bitmaps in native memory the collector cannot see, so they are
+        // released deliberately rather than left to finalisers.
+        blurs?.Dispose();
+        snapshot?.Dispose();
+
+        snapshot = null;
+        blurs = null;
+        canvas = null;
+        framedCanvas = null;
+
+        undo.Clear();
+        redo.Clear();
+        lastBandEdit = null;
+        dirty = false;
+
+        // The drawing tools are about a capture, and there is none. The menus thin out on their
+        // own, since their entries are built afresh each time they are opened.
+        band.IsVisible = false;
+        confirmBar.IsVisible = false;
+
+        // Back to the state fitting leaves the mat in. A scroller that can scroll offers whatever
+        // it holds infinite room, and the next capture opened into an empty editor is fitted: it
+        // would have nothing finite to fit to.
+        scroller.HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled;
+        scroller.VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled;
+
+        Title = "SnapShotKit";
     }
 
     Blueprint ShowCanvas()
@@ -239,6 +322,11 @@ public sealed class EditorWindow : Window
     /// </summary>
     void PinCanvas()
     {
+        if (framedCanvas is null)
+        {
+            return;
+        }
+
         pinned = framedCanvas.Bounds.Position;
 
         framedCanvas.HorizontalAlignment = HorizontalAlignment.Left;
@@ -246,11 +334,21 @@ public sealed class EditorWindow : Window
         framedCanvas.Margin = new Thickness(pinned.X, pinned.Y, 0, 0);
     }
 
-    void MoveCanvas(Vector shift) =>
-        framedCanvas.Margin = new Thickness(pinned.X + shift.X, pinned.Y + shift.Y, 0, 0);
+    void MoveCanvas(Vector shift)
+    {
+        if (framedCanvas is not null)
+        {
+            framedCanvas.Margin = new Thickness(pinned.X + shift.X, pinned.Y + shift.Y, 0, 0);
+        }
+    }
 
     void UnpinCanvas()
     {
+        if (framedCanvas is null)
+        {
+            return;
+        }
+
         framedCanvas.Margin = default;
         framedCanvas.HorizontalAlignment = HorizontalAlignment.Center;
         framedCanvas.VerticalAlignment = VerticalAlignment.Center;
@@ -272,6 +370,12 @@ public sealed class EditorWindow : Window
     /// </summary>
     void PlaceConfirmBar()
     {
+        if (canvas is null)
+        {
+            confirmBar.IsVisible = false;
+            return;
+        }
+
         confirmBar.IsVisible = canvas.IsResizingCanvas;
 
         if (!confirmBar.IsVisible || canvas.TranslatePoint(default, floating) is not { } corner)
@@ -322,36 +426,33 @@ public sealed class EditorWindow : Window
     /// </summary>
     static bool Moved(double current, double wanted) => double.IsNaN(current) || Math.Abs(current - wanted) > 0.5;
 
+    /// <summary>What a menu offers when there is no capture to offer it about.</summary>
+    static readonly MenuEntry[] NoCapture = [MenuEntry.Note("No capture open")];
+
+    /// <summary>
+    /// The menus.
+    ///
+    /// Each menu's entries are built afresh every time it is opened, so a menu with nothing to act
+    /// on says so rather than listing commands that would do nothing. The commands still guard
+    /// themselves: the keys reach them too, and the keys are not rebuilt.
+    /// </summary>
     void BuildMenus()
     {
-        menu.Add("File", () =>
-        [
-            MenuEntry.Item("New capture", "Print", NewCapture),
-            MenuEntry.Item("Open…", "Ctrl+O", OpenLibrary),
-            MenuEntry.Separator,
-            MenuEntry.Item("Save", "Ctrl+S", Save),
-            MenuEntry.Item("Save as…", "Ctrl+Shift+S", () => _ = SaveAsAsync()),
-            MenuEntry.Separator,
-            MenuEntry.Item("Export PNG", "Ctrl+E", () => _ = ExportAsync("png")),
-            MenuEntry.Item("Export JPEG…", "Ctrl+Shift+E", () => _ = ExportAsync("jpg")),
-            MenuEntry.Item("Copy to clipboard", "Ctrl+C", CopyToClipboard),
-            MenuEntry.Separator,
-            MenuEntry.Item("Close", "Ctrl+W", Close)
-        ]);
+        menu.Add("File", FileMenu);
 
-        menu.Add("Edit", () =>
+        menu.Add("Edit", () => snapshot is null ? NoCapture :
         [
             MenuEntry.Item("Undo", "Ctrl+Z", Undo),
             MenuEntry.Item("Redo", "Ctrl+Shift+Z", Redo),
             MenuEntry.Separator,
-            MenuEntry.Item("Delete", "Del", () => canvas.DeleteSelected()),
-            MenuEntry.Item("Deselect", "Esc", () => canvas.Select(null)),
+            MenuEntry.Item("Delete", "Del", () => canvas?.DeleteSelected()),
+            MenuEntry.Item("Deselect", "Esc", () => canvas?.Select(null)),
             MenuEntry.Separator,
             MenuEntry.Item("Resize canvas", "C", () => SetTool(EditorTool.Canvas)),
             MenuEntry.Item("Fit canvas to capture", null, FitCanvasToCapture),
             MenuEntry.Separator,
             MenuEntry.Item("Cut out a band", "X", () => SetTool(EditorTool.Cut)),
-            MenuEntry.Item("Put every cut back", null, () => canvas.UncutAll()),
+            MenuEntry.Item("Put every cut back", null, () => canvas?.UncutAll()),
             MenuEntry.Separator,
             MenuEntry.Item("Bring to front", "Ctrl+Shift+]", () => Arrange(Order.Front)),
             MenuEntry.Item("Bring forward", "Ctrl+]", () => Arrange(Order.Forward)),
@@ -359,7 +460,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Send to back", "Ctrl+Shift+[", () => Arrange(Order.Back))
         ]);
 
-        menu.Add("Draw", () =>
+        menu.Add("Draw", () => snapshot is null ? NoCapture :
         [
             MenuEntry.Item("Select", "V", () => SetTool(EditorTool.Select)),
             MenuEntry.Item("Arrow", "A", () => SetTool(EditorTool.Arrow)),
@@ -369,10 +470,10 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Numbered marker", "N", () => SetTool(EditorTool.Step)),
             MenuEntry.Separator,
             MenuEntry.Item("New line in text", "Shift+Enter", () => { }),
-            MenuEntry.Item("Finish text", "Enter", () => canvas.CommitEdit())
+            MenuEntry.Item("Finish text", "Enter", () => canvas?.CommitEdit())
         ]);
 
-        menu.Add("View", () =>
+        menu.Add("View", () => snapshot is null ? NoCapture :
         [
             MenuEntry.Item("Zoom in", "Ctrl++", () => StepZoom(1)),
             MenuEntry.Item("Zoom out", "Ctrl+-", () => StepZoom(-1)),
@@ -399,6 +500,39 @@ public sealed class EditorWindow : Window
         ]);
     }
 
+    /// <summary>
+    /// The File menu.
+    ///
+    /// Taking a capture, opening one and closing the window make sense with an empty editor.
+    /// Saving, exporting and copying do not, and are left out rather than listed and refused.
+    /// </summary>
+    IReadOnlyList<MenuEntry> FileMenu()
+    {
+        List<MenuEntry> entries =
+        [
+            MenuEntry.Item("New capture", "Print", NewCapture),
+            MenuEntry.Item("Open…", "Ctrl+O", OpenLibrary),
+            MenuEntry.Separator
+        ];
+
+        if (snapshot is not null)
+        {
+            entries.AddRange(
+            [
+                MenuEntry.Item("Save", "Ctrl+S", Save),
+                MenuEntry.Item("Save as…", "Ctrl+Shift+S", () => _ = SaveAsAsync()),
+                MenuEntry.Separator,
+                MenuEntry.Item("Export PNG", "Ctrl+E", () => _ = ExportAsync("png")),
+                MenuEntry.Item("Export JPEG…", "Ctrl+Shift+E", () => _ = ExportAsync("jpg")),
+                MenuEntry.Item("Copy to clipboard", "Ctrl+C", CopyToClipboard),
+                MenuEntry.Separator
+            ]);
+        }
+
+        entries.Add(MenuEntry.Item("Close", "Ctrl+W", Close));
+        return entries;
+    }
+
     void WireBand()
     {
         band.ToolChosen += SetTool;
@@ -407,14 +541,21 @@ public sealed class EditorWindow : Window
 
         band.StyleChosen += ApplyStyle;
 
+        // Every setting below writes to the capture on the canvas, and the band is not shown when
+        // there is none. The guards are the brace to that belt: an event that arrives anyway is
+        // dropped rather than reaching for a document that is not there.
         band.CutDirectionChosen += axis =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.CutDirection = axis;
             UpdateChrome();
         };
 
         band.ColourChosen += colour =>
         {
+            if (canvas is null) return;
+
             switch (BandTarget())
             {
                 case EditorTool.Box:
@@ -441,6 +582,8 @@ public sealed class EditorWindow : Window
 
         band.WeightChosen += weight =>
         {
+            if (canvas is null) return;
+
             if (BandTarget() == EditorTool.Box)
             {
                 canvas.Defaults.BoxBorderThickness = weight;
@@ -455,12 +598,16 @@ public sealed class EditorWindow : Window
 
         band.DoubleHeadChosen += doubled =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.ArrowDoubleHeaded = doubled;
             Apply<ArrowAnnotation>("head", arrow => arrow.DoubleHeaded = doubled);
         };
 
         band.FillChosen += filled =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.BoxFilled = filled;
 
             // Turning a fill off keeps the colour it had, so turning it back on restores it rather
@@ -474,24 +621,32 @@ public sealed class EditorWindow : Window
 
         band.FillColourChosen += fill =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.BoxFillColor = fill;
             Apply<BoxAnnotation>("fill-colour", box => box.FillColor = fill);
         };
 
         band.BlurChosen += strength =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.BlurStrength = strength;
             Apply<BlurAnnotation>("strength", blur => blur.Strength = strength);
         };
 
         band.TextSizeChosen += size =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.TextSize = size;
             Apply<TextAnnotation>("size", text => text.FontSize = size);
         };
 
         band.TextBackChosen += backed =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.TextBackgrounded = backed;
 
             Apply<TextAnnotation>("background", text => text.Background = backed
@@ -503,6 +658,8 @@ public sealed class EditorWindow : Window
 
         band.TextBackColourChosen += background =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.TextBackgroundColor = background;
             Apply<TextAnnotation>("background-colour", text => text.Background = background);
         };
@@ -511,6 +668,8 @@ public sealed class EditorWindow : Window
 
         band.StepSizeChosen += diameter =>
         {
+            if (canvas is null) return;
+
             canvas.Defaults.StepDiameter = diameter;
             Apply<StepAnnotation>("size", step => step.Diameter = diameter);
         };
@@ -519,8 +678,8 @@ public sealed class EditorWindow : Window
         // how wide, not which way to grow, and growing from the corner already on screen is the
         // answer that needs no explaining. Nothing is applied yet: the fields propose, exactly as
         // dragging an edge does, and the resize is confirmed as a whole.
-        band.CanvasWidthChosen += width => canvas.ProposeCanvasSize(width, null);
-        band.CanvasHeightChosen += height => canvas.ProposeCanvasSize(null, height);
+        band.CanvasWidthChosen += width => canvas?.ProposeCanvasSize(width, null);
+        band.CanvasHeightChosen += height => canvas?.ProposeCanvasSize(null, height);
         band.CanvasFitRequested += FitCanvasToCapture;
 
         band.ZoomStepped += direction => StepZoom(direction);
@@ -535,6 +694,11 @@ public sealed class EditorWindow : Window
     /// </summary>
     void FitCanvasToCapture()
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         if (canvas.IsResizingCanvas)
         {
             canvas.ProposeCaptureBounds();
@@ -569,6 +733,11 @@ public sealed class EditorWindow : Window
     /// </summary>
     void ApplyStyle(AnnotationStyle style)
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         canvas.Defaults.Adopt(style.Look);
 
         if (canvas.Selected is { } target && target.GetType() == style.Look.GetType())
@@ -594,7 +763,7 @@ public sealed class EditorWindow : Window
     }
 
     /// <summary>Which tool's settings the band is currently showing, which is the selection's kind when there is one.</summary>
-    EditorTool BandTarget() => canvas.Selected switch
+    EditorTool BandTarget() => canvas?.Selected switch
     {
         ArrowAnnotation => EditorTool.Arrow,
         BoxAnnotation => EditorTool.Box,
@@ -607,6 +776,11 @@ public sealed class EditorWindow : Window
     /// <summary>Edits the selection when it is of the given kind, coalescing repeats of the same setting into one undo step.</summary>
     void Apply<T>(string property, Action<T> change) where T : Annotation
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         if (canvas.Selected is not T target)
         {
             return;
@@ -632,6 +806,11 @@ public sealed class EditorWindow : Window
 
     void WireCanvas()
     {
+        if (canvas is null)
+        {
+            return;
+        }
+
         canvas.BeforeChange += Record;
         canvas.Abandoned += () => { if (undo.Count > 0) undo.Pop(); };
         canvas.Changed += () => { dirty = true; UpdateChrome(); };
@@ -655,6 +834,11 @@ public sealed class EditorWindow : Window
     /// <summary>Takes an undo snapshot. Anything newly done invalidates whatever had been undone.</summary>
     void Record()
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         lastBandEdit = null;
         undo.Push(snapshot.Document.Copy());
         redo.Clear();
@@ -669,6 +853,11 @@ public sealed class EditorWindow : Window
     /// </summary>
     void SetZoom(double? zoom, Point? anchor = null)
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         var bars = zoom is null
             ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
             : Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
@@ -699,6 +888,11 @@ public sealed class EditorWindow : Window
     /// </summary>
     void KeepUnderPointer(Point image, Point anchor)
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         // The new size and the new scroll extent have to exist before anything can be measured
         // against them, and the layout pass would otherwise not run until after this returns.
         scroller.UpdateLayout();
@@ -719,6 +913,11 @@ public sealed class EditorWindow : Window
     /// </summary>
     void StepZoom(int direction, Point? anchor = null)
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         var current = canvas.EffectiveScale;
 
         var next = direction > 0
@@ -749,6 +948,11 @@ public sealed class EditorWindow : Window
 
     void SetTool(EditorTool selected)
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         tool = selected;
 
         // Picking the canvas tool opens a resize, and leaving it abandons one that was never
@@ -767,6 +971,11 @@ public sealed class EditorWindow : Window
     /// </summary>
     void Arrange(Order order)
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         if (canvas.Selected is not { } target)
         {
             return;
@@ -805,6 +1014,11 @@ public sealed class EditorWindow : Window
     /// <summary>Moves one step between the two histories, which is the same operation in both directions.</summary>
     void Step(Stack<SnapshotDocument> from, Stack<SnapshotDocument> to)
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         if (from.Count == 0)
         {
             return;
@@ -837,6 +1051,11 @@ public sealed class EditorWindow : Window
 
     void Save()
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         canvas.CommitEdit();
 
         try
@@ -854,6 +1073,11 @@ public sealed class EditorWindow : Window
 
     async Task SaveAsAsync()
     {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save snapshot as",
@@ -884,6 +1108,11 @@ public sealed class EditorWindow : Window
 
     async Task ExportAsync(string extension)
     {
+        if (snapshot is null || canvas is null || blurs is null)
+        {
+            return;
+        }
+
         canvas.CommitEdit();
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -915,6 +1144,11 @@ public sealed class EditorWindow : Window
     /// <summary>Copies the annotated capture, which is what is on screen rather than the untouched original.</summary>
     void CopyToClipboard()
     {
+        if (snapshot is null || canvas is null || blurs is null)
+        {
+            return;
+        }
+
         canvas.CommitEdit();
 
         try
@@ -940,7 +1174,7 @@ public sealed class EditorWindow : Window
     /// </summary>
     void CopySnapshot(string path)
     {
-        if (string.Equals(path, snapshot.Path, StringComparison.Ordinal))
+        if (snapshot is not null && string.Equals(path, snapshot.Path, StringComparison.Ordinal))
         {
             CopyToClipboard();
             return;
@@ -969,27 +1203,37 @@ public sealed class EditorWindow : Window
     /// <summary>
     /// Deletes a capture the strip was asked about, off disk.
     ///
-    /// Deleting the one on the canvas is allowed, and leaves it exactly where it is, marked unsaved.
-    /// Both alternatives are worse: refusing makes the capture the user is looking at the one that
-    /// cannot be tidied away, and closing the document throws away annotations the file never had.
-    /// Marked unsaved, saving writes it back, which is the way out of a deletion regretted.
+    /// Deleting the one on the canvas is allowed, and closes it: the editor is left empty rather
+    /// than holding a document with no file behind it. Keeping it would mean the next capture
+    /// opened had to answer a question about saving work the user has just thrown away, and there
+    /// is nowhere left to save it to. Refusing instead would make the capture being looked at the
+    /// one capture that cannot be tidied away.
     /// </summary>
     /// <param name="answered">
     /// The user held shift, which is them answering the question in advance. Somebody clearing out a
-    /// run of junk captures should not have to say so once per capture.
+    /// run of junk captures should not have to say so once per capture. It does not carry as far as
+    /// unsaved work on the canvas, which is asked about however the delete was asked for.
     /// </param>
     async Task DeleteSnapshotAsync(string path, bool answered)
     {
         var name = Path.GetFileName(path);
-        var onCanvas = string.Equals(path, snapshot.Path, StringComparison.Ordinal);
+        var onCanvas = snapshot is not null && string.Equals(path, snapshot.Path, StringComparison.Ordinal);
 
         // Deleting a capture is not undoable, so it gets a question. The wording says what will be
         // gone rather than asking whether the user is sure.
-        var confirmed = answered || await Confirm.DeleteAsync(this, "Delete capture", onCanvas
-            ? $"{name} will be deleted permanently.\nIt stays on the canvas as unsaved work, so saving would write it back."
-            : $"{name} will be deleted permanently.\nAny images you already exported are unaffected.");
+        //
+        // Shift says not to ask about the file. It does not say to throw away annotations that were
+        // never written to it, so the question survives a held shift when the capture on the canvas
+        // has unsaved changes: that is the one thing here that no library still holds a copy of.
+        var unsaved = onCanvas && dirty;
 
-        if (!confirmed)
+        var question = unsaved
+            ? $"{name} will be deleted permanently, and the changes on the canvas that have not been saved go with it."
+            : onCanvas
+                ? $"{name} will be deleted permanently.\nIt is the capture on the canvas, so the editor will be left empty."
+                : $"{name} will be deleted permanently.\nAny images you already exported are unaffected.";
+
+        if ((!answered || unsaved) && !await Confirm.DeleteAsync(this, "Delete capture", question))
         {
             return;
         }
@@ -1006,7 +1250,7 @@ public sealed class EditorWindow : Window
 
         if (onCanvas)
         {
-            dirty = true;
+            CloseDocument();
         }
 
         RefreshRecent();
@@ -1014,7 +1258,7 @@ public sealed class EditorWindow : Window
         // The chrome first and the message second: the readouts overwrite the status line, so
         // reporting before them would say something and then immediately take it back.
         UpdateChrome();
-        Report(onCanvas ? $"Deleted {name}, which is still on the canvas and unsaved" : $"Deleted {name}");
+        Report(onCanvas ? $"Deleted {name}, and closed it" : $"Deleted {name}");
     }
 
     /// <summary>Asks the daemon for a capture, the same way pressing Print does.</summary>
@@ -1048,7 +1292,7 @@ public sealed class EditorWindow : Window
     /// </summary>
     async void OpenSnapshot(string path)
     {
-        if (string.Equals(path, snapshot.Path, StringComparison.Ordinal))
+        if (snapshot is not null && string.Equals(path, snapshot.Path, StringComparison.Ordinal))
         {
             return;
         }
@@ -1076,16 +1320,22 @@ public sealed class EditorWindow : Window
         var previousSnapshot = snapshot;
         var previousBlurs = blurs;
 
+        // The zoom carries over from the capture being put down, so opening one after another
+        // keeps the working magnification. From an empty editor there is none to carry, and fitting
+        // is what a capture arriving in an empty window should do.
+        var zoom = canvas?.Zoom;
+
         snapshot = next;
         blurs = new BlurCache(next.OriginalPng);
-        canvas = new CanvasView(next, blurs) { Zoom = canvas.Zoom };
+        canvas = new CanvasView(next, blurs) { Zoom = zoom };
         WireCanvas();
         framedCanvas = ShowCanvas();
+        band.IsVisible = true;
 
         // Both hold full-resolution bitmaps in native memory the collector cannot see, so leaving
         // them to finalisers would let every click in the strip stack another capture in memory.
-        previousBlurs.Dispose();
-        previousSnapshot.Dispose();
+        previousBlurs?.Dispose();
+        previousSnapshot?.Dispose();
 
         undo.Clear();
         redo.Clear();
@@ -1108,12 +1358,22 @@ public sealed class EditorWindow : Window
         thumbnailWork = new CancellationTokenSource();
 
         var entries = SnapshotLibrary.List().Take(RecentCount).ToList();
-        recent.Show(SnapshotItem.Build(entries, thumbnails, thumbnailWork.Token), snapshot.Path);
+        recent.Show(SnapshotItem.Build(entries, thumbnails, thumbnailWork.Token), snapshot?.Path ?? string.Empty);
     }
 
     /// <summary>Points the band, the menu bar and the status line at whatever is true now.</summary>
     void UpdateChrome()
     {
+        // Nothing open: the band is not on screen and the status line has nothing to measure. The
+        // mat already says so in the middle of the window, which is a better place to say it than
+        // a line of small print along the bottom.
+        if (snapshot is null || canvas is null)
+        {
+            menu.ShowNothing();
+            status.Text = string.Empty;
+            return;
+        }
+
         band.Sync(tool, canvas.Defaults, canvas.Selected);
         band.ShowZoom(canvas.EffectiveScale);
         menu.Show(Path.GetFileName(snapshot.Path), dirty);
@@ -1172,6 +1432,14 @@ public sealed class EditorWindow : Window
     /// </summary>
     async Task<bool> ConfirmDiscardAsync()
     {
+        // Nothing open is nothing to lose. The question is only ever reached through the dirty
+        // flag, which an empty editor does not carry, but an unanswerable question is worse than
+        // a redundant guard.
+        if (snapshot is null)
+        {
+            return true;
+        }
+
         var chosen = await Confirm.AskAsync(this, "Unsaved changes",
             $"{Path.GetFileName(snapshot.Path)} has changes that have not been saved.",
             new Choice("Keep editing"),
@@ -1220,7 +1488,7 @@ public sealed class EditorWindow : Window
 
     void OnKeyUp(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Space)
+        if (e.Key == Key.Space && canvas is not null)
         {
             canvas.Panning = false;
         }
@@ -1230,6 +1498,28 @@ public sealed class EditorWindow : Window
     {
         var control = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+
+        // With nothing open, only the keys that are about the window rather than about a capture
+        // still mean anything. The rest do nothing, and the empty mat is what says why.
+        if (snapshot is null || canvas is null)
+        {
+            switch (e.Key)
+            {
+                case Key.O or Key.L when control:
+                    OpenLibrary();
+                    break;
+
+                case Key.W when control:
+                    Close();
+                    break;
+
+                case Key.Escape:
+                    menu.CloseAll();
+                    break;
+            }
+
+            return;
+        }
 
         if (control)
         {

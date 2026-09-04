@@ -13,6 +13,14 @@ public readonly record struct MenuEntry(string? Label, string? Shortcut, Action?
     public static MenuEntry Separator => new(null, null, null);
 
     public static MenuEntry Item(string label, string? shortcut, Action invoke) => new(label, shortcut, invoke);
+
+    /// <summary>
+    /// A line that says something rather than doing something.
+    ///
+    /// What a menu with nothing to offer shows. An empty popup reads as a bug, and a live-looking
+    /// item that does nothing when pressed reads as a worse one.
+    /// </summary>
+    public static MenuEntry Note(string label) => new(label, null, null);
 }
 
 /// <summary>
@@ -46,7 +54,11 @@ public static class PopupMenu
                 continue;
             }
 
-            var label = Labels.Body(entry.Label, 13.5, Tokens.Neutral900Brush);
+            // A note is a line of text in the menu's shape, not a control: no hover, no hand, and
+            // the quieter ink the system uses for anything that is not to be acted on.
+            var note = entry.Invoke is null;
+
+            var label = Labels.Body(entry.Label, 13.5, note ? Tokens.Neutral500Brush : Tokens.Neutral900Brush);
             label.VerticalAlignment = VerticalAlignment.Center;
 
             var shortcut = Labels.Body(entry.Shortcut ?? string.Empty, 12.5, Tokens.Neutral500Brush);
@@ -64,18 +76,21 @@ public static class PopupMenu
                 Child = row,
                 Padding = new Thickness(Tokens.Space.S4, 5),
                 Background = Tokens.BgBrush,
-                Cursor = new Cursor(StandardCursorType.Hand)
+                Cursor = new Cursor(note ? StandardCursorType.Arrow : StandardCursorType.Hand)
             };
 
-            var invoke = entry.Invoke;
-            item.PointerPressed += (_, _) =>
+            if (!note)
             {
-                popup.IsOpen = false;
-                invoke?.Invoke();
-            };
+                var invoke = entry.Invoke;
+                item.PointerPressed += (_, _) =>
+                {
+                    popup.IsOpen = false;
+                    invoke?.Invoke();
+                };
 
-            item.PointerEntered += (_, _) => item.Background = Tokens.Accent100Brush;
-            item.PointerExited += (_, _) => item.Background = Tokens.BgBrush;
+                item.PointerEntered += (_, _) => item.Background = Tokens.Accent100Brush;
+                item.PointerExited += (_, _) => item.Background = Tokens.BgBrush;
+            }
 
             items.Children.Add(item);
         }

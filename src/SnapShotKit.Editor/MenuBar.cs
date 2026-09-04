@@ -166,6 +166,18 @@ public sealed class MenuBar : Border
         }
     }
 
+    /// <summary>
+    /// Says that nothing is open.
+    ///
+    /// Blank rather than "saved": a window holding no document has not saved anything, and a bar
+    /// reading "saved" beside an empty canvas is a reassurance about work that does not exist.
+    /// </summary>
+    public void ShowNothing()
+    {
+        fileName.Text = string.Empty;
+        dirtyState.Text = string.Empty;
+    }
+
     /// <summary>Shows which snapshot is open and whether it has been saved.</summary>
     public void Show(string name, bool dirty)
     {
