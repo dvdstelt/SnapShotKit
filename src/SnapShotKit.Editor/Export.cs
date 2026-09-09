@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
@@ -54,6 +55,14 @@ public static class Export
         return rendered;
     }
 
+    /// <summary>
+    /// Renders to a file, in whichever format the name asks for.
+    ///
+    /// The extension decides, because that is what the user typed into the save dialog and what
+    /// every other tool on the desktop will read the file as. A name that asks for something not
+    /// listed here is refused rather than quietly written as something else: a file called
+    /// `shot.avif` holding a JPEG is worse than an error.
+    /// </summary>
     public static void ToFile(Snapshot snapshot, BlurCache blurs, string path)
     {
         using var rendered = Render(snapshot, blurs);
@@ -64,7 +73,39 @@ public static class Export
             return;
         }
 
-        // Avalonia writes PNG only, so JPEG goes out through ImageSharp.
+        // Avalonia writes PNG only, so everything else goes out through ImageSharp.
+        using var image = ToImage(rendered);
+
+        if (path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
+        {
+            // JPEG has no alpha. A canvas larger than its capture is transparent where the capture
+            // is not, and transparency dropped rather than filled comes out black, so it is filled
+            // here instead. White, because that is what a screenshot pasted into a document sits on.
+            image.Mutate(context => context.BackgroundColor(Color.White));
+            image.SaveAsJpeg(path);
+            return;
+        }
+
+        if (path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+        {
+            // Lossless, and so nothing is filled in: WebP carries alpha, so a canvas pushed out
+            // past its capture comes out transparent exactly as the PNG does.
+            //
+            // Lossy would make the file smaller again, but a screenshot is text and hairlines
+            // rather than a photograph, and that is the one thing lossy WebP smears. What this
+            // format is being asked for here is a PNG at half the size, not a smaller JPEG.
+            image.SaveAsWebp(path, new WebpEncoder { FileFormat = WebpFileFormatType.Lossless });
+            return;
+        }
+
+        throw new NotSupportedException(
+            $"{System.IO.Path.GetExtension(path)} is not a format SnapShotKit writes. Use .png, .jpg or .webp.");
+    }
+
+    /// <summary>The rendered canvas as an ImageSharp image, which is where every format but PNG is written from.</summary>
+    static Image<Bgra32> ToImage(RenderTargetBitmap rendered)
+    {
         var size = rendered.PixelSize;
         var stride = size.Width * 4;
         var pixels = new byte[(long)stride * size.Height];
@@ -79,13 +120,6 @@ public static class Export
             handle.Free();
         }
 
-        using var image = Image.LoadPixelData<Bgra32>(pixels, size.Width, size.Height);
-
-        // JPEG has no alpha. A canvas larger than its capture is transparent where the capture is
-        // not, and transparency dropped rather than filled comes out black, so it is filled here
-        // instead. White, because that is what a screenshot pasted into a document sits on.
-        image.Mutate(context => context.BackgroundColor(Color.White));
-
-        image.SaveAsJpeg(path);
+        return Image.LoadPixelData<Bgra32>(pixels, size.Width, size.Height);
     }
 }

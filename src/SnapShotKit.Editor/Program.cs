@@ -98,7 +98,19 @@ internal sealed class EditorApp : Application
                     // Rendering needs the graphics stack, so this runs inside the app lifetime even
                     // though no window is ever shown.
                     using var blurs = new BlurCache(snapshot.OriginalPng);
-                    Export.ToFile(snapshot, blurs, exportPath);
+
+                    try
+                    {
+                        Export.ToFile(snapshot, blurs, exportPath);
+                    }
+                    catch (Exception exception)
+                    {
+                        // Said as its own failure rather than falling through to the handler
+                        // below, which would report a snapshot that opened perfectly well as one
+                        // that could not be opened.
+                        Console.Error.WriteLine($"snapshotkit-editor: could not export to {exportPath}: {exception.Message}");
+                        Environment.Exit(1);
+                    }
 
                     Console.WriteLine(exportPath);
 

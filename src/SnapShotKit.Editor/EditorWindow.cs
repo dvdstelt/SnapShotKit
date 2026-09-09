@@ -524,6 +524,7 @@ public sealed class EditorWindow : Window
                 MenuEntry.Separator,
                 MenuEntry.Item("Export PNG", "Ctrl+E", () => _ = ExportAsync("png")),
                 MenuEntry.Item("Export JPEG…", "Ctrl+Shift+E", () => _ = ExportAsync("jpg")),
+                MenuEntry.Item("Export WebP…", null, () => _ = ExportAsync("webp")),
                 MenuEntry.Item("Copy to clipboard", "Ctrl+C", CopyToClipboard),
                 MenuEntry.Separator
             ]);

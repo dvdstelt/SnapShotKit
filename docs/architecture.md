@@ -74,7 +74,7 @@ snapshot-01.ssk  (zip)
 └── meta.json         when it was taken, the source screen size, the region within it
 ```
 
-The point of the format is that editing stays non-destructive. `original.png` is never touched, and every arrow, callout or blur is an object with coordinates rather than pixels burned into the image, so anything drawn today can be moved or deleted next week. Exporting to PNG or JPEG renders the document rather than being the document.
+The point of the format is that editing stays non-destructive. `original.png` is never touched, and every arrow, callout or blur is an object with coordinates rather than pixels burned into the image, so anything drawn today can be moved or deleted next week. Exporting to PNG, JPEG or WebP renders the document rather than being the document.
 
 The canvas is recorded as a rectangle rather than a size, because it is not obliged to match the capture: it carries an offset saying where its top-left corner sits relative to the capture's. A document written before that existed has no offset, and zero is exactly what it meant.
 
@@ -138,7 +138,9 @@ Nothing reaches the document until the resize is applied, so the whole negotiati
 
 The surface follows the canvas exactly, both ways. Letting it keep the largest extent a drag had reached would leave grey where the canvas has been but no longer is, which says "something was cropped here" about a place where nothing was. The picture still does not move while an edge is dragged: the scale is frozen for the length of the drag, and the window places the surface by hand so that the capture stays exactly where it is on screen whichever way the boundary is going. A surface that refits as the canvas grows would take the picture out from under the pointer that is sizing it, and the drag would chase its own tail. Letting go returns the scale to whatever shows all of it, which is the one moment where moving the picture costs nothing.
 
-Transparency is drawn as a chequerboard on the editing canvas and as nothing at all in an export, which is the same split as a blurred region's hairline edge. The affordance belongs to editing; the picture is the picture. JPEG has no alpha, so what would have been transparent is filled with white on the way out rather than arriving black.
+Transparency is drawn as a chequerboard on the editing canvas and as nothing at all in an export, which is the same split as a blurred region's hairline edge. The affordance belongs to editing; the picture is the picture. JPEG has no alpha, so what would have been transparent is filled with white on the way out rather than arriving black. PNG and WebP both carry alpha and are left alone.
+
+WebP goes out lossless, which makes it a PNG at roughly half the size rather than a smaller JPEG. Lossy is what the format is usually reached for, and it is the wrong default here: a screenshot is text and hairlines, which is exactly what lossy encoding smears, and somebody who wanted that trade already has JPEG. The extension decides the format, because that is what was typed into the save dialog and what every other tool will read the file as; a name asking for something not on the list is refused rather than quietly written as something else.
 
 ## Cutting a band out
 
