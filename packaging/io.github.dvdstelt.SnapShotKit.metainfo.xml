@@ -34,7 +34,8 @@
     <p>
       Annotations are kept as objects alongside the untouched capture, so anything drawn can be
       moved, restyled or removed next week, and the picture underneath is never modified. Exporting
-      to PNG, JPEG or WebP renders the document rather than being the document.
+      to PNG, JPEG or WebP renders the document rather than being the document, and asks first
+      what the file should be and where it goes.
     </p>
     <p>Features:</p>
     <ul>
@@ -43,7 +44,8 @@
       <li>Blur that obscures the picture without ever covering the annotations over it</li>
       <li>A library of past captures, grouped by day</li>
       <li>Any image opened from the file manager, wrapped in a snapshot and annotated the same way</li>
-      <li>Export to PNG, JPEG or WebP, or copy straight to the clipboard</li>
+      <li>Export to PNG, JPEG or WebP, with transparency, compression and quality settings</li>
+      <li>Copy the annotated capture straight to the clipboard</li>
     </ul>
     <p>
       SnapShotKit is free to use while it is pre-1.0. From version 1.0.0 it will cost 15 euro,

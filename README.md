@@ -6,7 +6,7 @@ Press Print and the whole screen is captured immediately, so timing a capture is
 
 The result opens in an editor for arrows, boxes, blur, text and numbered markers, where the canvas can also be cropped or given transparent space around it, and is filed in a library grouped by day.
 
-Annotations are kept as objects alongside the untouched capture, so anything drawn can be moved, restyled or removed next week, and the picture underneath is never modified. Exporting to PNG, JPEG or WebP renders the document rather than being the document.
+Annotations are kept as objects alongside the untouched capture, so anything drawn can be moved, restyled or removed next week, and the picture underneath is never modified. Exporting to PNG, JPEG or WebP renders the document rather than being the document, and asks first: transparency kept or flattened, WebP lossless or lossy and how hard to compress, JPEG quality, and whether the file lands in the exports folder or beside the picture it came from.
 
 An image that was never captured here can be annotated too. Open one from the File menu, or right-click it in the file manager and open it with SnapShotKit, and it is wrapped in a snapshot of its own; the file you pointed at is only read.
 

@@ -37,6 +37,15 @@ public sealed class EditorState
     /// </summary>
     public Dictionary<string, List<string>> Styles { get; set; } = [];
 
+    /// <summary>
+    /// How the last export was written, which is how the next one is offered.
+    ///
+    /// Remembered because exporting is rarely done once. Somebody who has settled on lossless WebP
+    /// beside the original wants that again tomorrow, and a dialog that opens on the defaults every
+    /// time is one they have to correct every time.
+    /// </summary>
+    public ExportSettings Export { get; set; } = new();
+
     /// <summary>Reads what was remembered, or hands back the defaults when there is nothing to read.</summary>
     public static EditorState Load()
     {
@@ -58,6 +67,13 @@ public sealed class EditorState
     public void RememberStyles(EditorTool tool, IEnumerable<string> names)
     {
         Styles[tool.ToString()] = [.. names];
+        Save();
+    }
+
+    /// <summary>Records how an export was written, and writes it out.</summary>
+    public void RememberExport(ExportSettings settings)
+    {
+        Export = settings;
         Save();
     }
 

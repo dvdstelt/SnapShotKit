@@ -2,6 +2,8 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -16,7 +18,13 @@ namespace SnapShotKit.Editor;
 /// </summary>
 public static class Export
 {
-    /// <summary>Renders to PNG bytes, for handing to something that is not a file.</summary>
+    /// <summary>
+    /// Renders to PNG bytes, for handing to something that is not a file.
+    ///
+    /// Avalonia's encoder rather than the one every file goes through, because there is nothing to
+    /// ask for here: the clipboard wants a PNG with its transparency, which is what this writes,
+    /// and going the long way round would copy the buffer to gain a setting nobody is offered.
+    /// </summary>
     public static byte[] ToPng(Snapshot snapshot, BlurCache blurs)
     {
         using var rendered = Render(snapshot, blurs);
@@ -32,8 +40,14 @@ public static class Export
     /// The target starts transparent and only what is drawn covers it, so a canvas pushed out past
     /// the capture comes out with real transparency around the picture rather than a colour someone
     /// has to guess at.
+    ///
+    /// An export that is not keeping its transparency is flattened here, by painting the ground
+    /// before anything stands on it, rather than by dropping the alpha channel afterwards. The
+    /// renderer is the one thing that knows how a half-covered pixel should meet what is under it,
+    /// and letting it answer means a soft edge over the margin lands on white the way it looks on
+    /// screen instead of being composited a second time by hand.
     /// </summary>
-    static RenderTargetBitmap Render(Snapshot snapshot, BlurCache blurs)
+    static RenderTargetBitmap Render(Snapshot snapshot, BlurCache blurs, Avalonia.Media.Color? ground = null)
     {
         var canvas = snapshot.Document.Canvas;
 
@@ -46,64 +60,74 @@ public static class Export
             Math.Max((int)Math.Round(area.Height), 1));
 
         var rendered = new RenderTargetBitmap(size, new Vector(96, 96));
+        var bounds = new Rect(0, 0, size.Width, size.Height);
 
         using (var context = rendered.CreateDrawingContext())
         {
-            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, size.Width, size.Height), area);
+            if (ground is { } fill)
+            {
+                context.FillRectangle(new Avalonia.Media.SolidColorBrush(fill), bounds);
+            }
+
+            SnapshotRenderer.Draw(context, snapshot, blurs, bounds, area);
         }
 
         return rendered;
     }
 
     /// <summary>
-    /// Renders to a file, in whichever format the name asks for.
+    /// Renders to a file, in whichever format the name asks for, with default settings for it.
     ///
-    /// The extension decides, because that is what the user typed into the save dialog and what
-    /// every other tool on the desktop will read the file as. A name that asks for something not
-    /// listed here is refused rather than quietly written as something else: a file called
+    /// This is the command line's way in. The extension decides, and a name that asks for something
+    /// not on the list is refused rather than quietly written as something else: a file called
     /// `shot.avif` holding a JPEG is worse than an error.
     /// </summary>
-    public static void ToFile(Snapshot snapshot, BlurCache blurs, string path)
+    public static void ToFile(Snapshot snapshot, BlurCache blurs, string path) =>
+        ToFile(snapshot, blurs, path, ExportSettings.ForExtension(path));
+
+    /// <summary>
+    /// Renders to a file exactly as asked.
+    ///
+    /// The settings say the format rather than the name doing it, because by this point somebody
+    /// has chosen one in a dialog and the file was named to match. Everything goes out through
+    /// ImageSharp: Avalonia writes PNG and nothing else, and one encoder that can be told what to
+    /// do beats two that agree only by inspection.
+    /// </summary>
+    public static void ToFile(Snapshot snapshot, BlurCache blurs, string path, ExportSettings settings)
     {
-        using var rendered = Render(snapshot, blurs);
-
-        if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-        {
-            rendered.Save(path, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
-            return;
-        }
-
-        // Avalonia writes PNG only, so everything else goes out through ImageSharp.
+        using var rendered = Render(snapshot, blurs, settings.Transparent ? null : Avalonia.Media.Colors.White);
         using var image = ToImage(rendered);
 
-        if (path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
+        switch (settings.Format)
         {
-            // JPEG has no alpha. A canvas larger than its capture is transparent where the capture
-            // is not, and transparency dropped rather than filled comes out black, so it is filled
-            // here instead. White, because that is what a screenshot pasted into a document sits on.
-            image.Mutate(context => context.BackgroundColor(Color.White));
-            image.SaveAsJpeg(path);
-            return;
-        }
+            case ExportFormat.Jpeg:
+                image.SaveAsJpeg(path, new JpegEncoder { Quality = settings.JpegQuality });
+                return;
 
-        if (path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
-        {
-            // Lossless, and so nothing is filled in: WebP carries alpha, so a canvas pushed out
-            // past its capture comes out transparent exactly as the PNG does.
-            //
-            // Lossy would make the file smaller again, but a screenshot is text and hairlines
-            // rather than a photograph, and that is the one thing lossy WebP smears. What this
-            // format is being asked for here is a PNG at half the size, not a smaller JPEG.
-            image.SaveAsWebp(path, new WebpEncoder { FileFormat = WebpFileFormatType.Lossless });
-            return;
-        }
+            case ExportFormat.Webp:
+                image.SaveAsWebp(path, new WebpEncoder
+                {
+                    FileFormat = settings.WebpLossless ? WebpFileFormatType.Lossless : WebpFileFormatType.Lossy,
+                    Quality = settings.WebpQuality,
 
-        throw new NotSupportedException(
-            $"{System.IO.Path.GetExtension(path)} is not a format SnapShotKit writes. Use .png, .jpg or .webp.");
+                    // Nothing to compress away when the ground was painted in, and saying so keeps
+                    // the encoder from carrying an alpha channel that is 255 everywhere.
+                    TransparentColorMode = WebpTransparentColorMode.Clear
+                });
+                return;
+
+            default:
+                image.SaveAsPng(path, new PngEncoder
+                {
+                    // Written without an alpha channel when there is no transparency to keep, which
+                    // is a quarter of the pixel data gone for a picture that looks identical.
+                    ColorType = settings.Transparent ? PngColorType.RgbWithAlpha : PngColorType.Rgb
+                });
+                return;
+        }
     }
 
-    /// <summary>The rendered canvas as an ImageSharp image, which is where every format but PNG is written from.</summary>
+    /// <summary>The rendered canvas as an ImageSharp image, which is what every file is written from.</summary>
     static Image<Bgra32> ToImage(RenderTargetBitmap rendered)
     {
         var size = rendered.PixelSize;

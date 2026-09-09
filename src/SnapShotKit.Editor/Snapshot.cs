@@ -26,6 +26,7 @@ public sealed class Snapshot : IDisposable
         OriginalPng = originalPng;
         Bitmap = bitmap;
         Meta = meta;
+        OriginFolder = FolderOf(meta);
     }
 
     public string Path { get; private set; }
@@ -38,6 +39,53 @@ public sealed class Snapshot : IDisposable
 
     /// <summary>Carried through untouched so saving never discards what the daemon recorded.</summary>
     public string? Meta { get; }
+
+    /// <summary>
+    /// The folder holding the picture this snapshot was made out of, when there was one.
+    ///
+    /// Only an imported snapshot has one. A capture came off a screen, and a screen is not a folder
+    /// anybody wants an export written back into.
+    ///
+    /// Read once, when the snapshot is opened, and only believed if the folder is still there. A
+    /// picture opened off a memory stick last month is a path that resolves to nothing now, and an
+    /// export dialog offering to start somewhere that does not exist is worse than not offering.
+    /// </summary>
+    public string? OriginFolder { get; }
+
+    /// <summary>
+    /// Digs the imported picture's folder out of the recorded metadata.
+    ///
+    /// Hand-parsed rather than deserialised into a type, because this reads one field out of a
+    /// document the daemon and the importer each write differently and neither promises to keep.
+    /// Anything unexpected in there means there is no origin, which is the same answer a capture
+    /// gives, and no reason to fail opening a snapshot that is otherwise perfectly good.
+    /// </summary>
+    static string? FolderOf(string? meta)
+    {
+        if (meta is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(meta);
+
+            if (document.RootElement.TryGetProperty("imported", out var imported)
+                && imported.TryGetProperty("from", out var from)
+                && from.GetString() is { Length: > 0 } origin
+                && System.IO.Path.GetDirectoryName(origin) is { Length: > 0 } folder
+                && Directory.Exists(folder))
+            {
+                return folder;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Where the picture ends up once its cuts are closed up.

@@ -532,9 +532,7 @@ public sealed class EditorWindow : Window
                 MenuEntry.Item("Save", "Ctrl+S", Save),
                 MenuEntry.Item("Save as…", "Ctrl+Shift+S", () => _ = SaveAsAsync()),
                 MenuEntry.Separator,
-                MenuEntry.Item("Export PNG", "Ctrl+E", () => _ = ExportAsync("png")),
-                MenuEntry.Item("Export JPEG…", "Ctrl+Shift+E", () => _ = ExportAsync("jpg")),
-                MenuEntry.Item("Export WebP…", null, () => _ = ExportAsync("webp")),
+                MenuEntry.Item("Export…", "Ctrl+E", () => _ = ExportAsync()),
                 MenuEntry.Item("Copy to clipboard", "Ctrl+C", CopyToClipboard),
                 MenuEntry.Separator
             ]);
@@ -1117,7 +1115,13 @@ public sealed class EditorWindow : Window
         }
     }
 
-    async Task ExportAsync(string extension)
+    /// <summary>
+    /// Asks what the file should be, then where it goes, then writes it.
+    ///
+    /// The settings are remembered as soon as they are chosen rather than once the file is written,
+    /// so a picker closed by mistake does not also lose the format and quality just set.
+    /// </summary>
+    async Task ExportAsync()
     {
         if (snapshot is null || canvas is null || blurs is null)
         {
@@ -1126,14 +1130,43 @@ public sealed class EditorWindow : Window
 
         canvas.CommitEdit();
 
+        if (await ExportDialog.AskAsync(this, state.Export, snapshot.OriginFolder) is not { } settings)
+        {
+            return;
+        }
+
+        state.RememberExport(settings);
+
+        // Exports belong with the user's pictures by default, not beside the working document. An
+        // imported snapshot can also be sent back where its picture came from, which for somebody
+        // working through a folder of images is the only folder that matters.
+        var folder = settings.Folder == ExportFolder.Origin && snapshot.OriginFolder is { } origin
+            ? origin
+            : SnapShotKitPaths.Exports;
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+        }
+        catch (Exception)
+        {
+            // Only decides where the picker opens. Somewhere is better than nowhere, and the picker
+            // falls back on its own.
+        }
+
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = $"Export as {extension.ToUpperInvariant()}",
-            SuggestedFileName = Path.GetFileNameWithoutExtension(snapshot.Path) + "." + extension,
-            DefaultExtension = extension,
-            // Exports belong with the user's pictures, not beside the working document.
-            SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(SnapShotKitPaths.Exports),
-            FileTypeChoices = [new FilePickerFileType(extension.ToUpperInvariant()) { Patterns = [$"*.{extension}"] }]
+            Title = $"Export as {settings.Extension.ToUpperInvariant()}",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(snapshot.Path) + "." + settings.Extension,
+            DefaultExtension = settings.Extension,
+            SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(folder),
+            FileTypeChoices =
+            [
+                new FilePickerFileType(settings.Extension.ToUpperInvariant())
+                {
+                    Patterns = [$"*.{settings.Extension}"]
+                }
+            ]
         });
 
         if (file?.TryGetLocalPath() is not { } path)
@@ -1143,7 +1176,7 @@ public sealed class EditorWindow : Window
 
         try
         {
-            Export.ToFile(snapshot, blurs, path);
+            Export.ToFile(snapshot, blurs, path, settings);
             Report($"Exported {Path.GetFileName(path)}");
         }
         catch (Exception exception)
@@ -1609,7 +1642,7 @@ public sealed class EditorWindow : Window
                     return;
 
                 case Key.E:
-                    _ = ExportAsync(shift ? "jpg" : "png");
+                    _ = ExportAsync();
                     return;
 
                 case Key.C:
