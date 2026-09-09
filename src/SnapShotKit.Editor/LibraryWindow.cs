@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using SnapShotKit.Contracts;
 using SnapShotKit.Ui;
 
@@ -52,6 +53,7 @@ public sealed class LibraryWindow : Window
         menu.Add("File", () =>
         [
             MenuEntry.Item("New capture", "Print", NewCapture),
+            MenuEntry.Item("Open image…", "Ctrl+Shift+O", () => _ = OpenImageAsync()),
             MenuEntry.Separator,
             MenuEntry.Item("Close", "Ctrl+W", Close)
         ]);
@@ -306,6 +308,39 @@ public sealed class LibraryWindow : Window
         }
     }
 
+    /// <summary>
+    /// Brings a picture from anywhere on disk in as a snapshot, and opens it for editing.
+    ///
+    /// The library is what a bare `snapshotkit-editor` opens, so this is where somebody who has an
+    /// image and no capture starts. It goes out through the same event the tiles do: what comes
+    /// back is a snapshot, and the library has no reason to know it was a PNG ten milliseconds ago.
+    /// </summary>
+    async Task OpenImageAsync()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open an image",
+            AllowMultiple = false,
+            FileTypeFilter = [ImageImport.Filter()]
+        });
+
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } picked)
+        {
+            return;
+        }
+
+        try
+        {
+            var path = ImageImport.Create(picked);
+            Refresh();
+            Chosen?.Invoke(path);
+        }
+        catch (Exception exception)
+        {
+            count.Text = $"Could not open {System.IO.Path.GetFileName(picked)}: {exception.Message}";
+        }
+    }
+
     async Task DeleteSelectedAsync()
     {
         if (selected is not { } item)
@@ -352,6 +387,10 @@ public sealed class LibraryWindow : Window
 
             case Key.Escape:
                 menu.CloseAll();
+                break;
+
+            case Key.O when e.KeyModifiers.HasFlag(KeyModifiers.Control) && e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                _ = OpenImageAsync();
                 break;
 
             case Key.W when e.KeyModifiers.HasFlag(KeyModifiers.Control):

@@ -44,6 +44,12 @@ The editor opens a snapshot, and can render one without a window:
 ./src/SnapShotKit.Editor/bin/Debug/net10.0/snapshotkit-editor snapshot-01.ssk --export out.png
 ```
 
+Given a picture rather than a snapshot it wraps it in one first, which is the same path the file manager's "Open With" takes. That writes a `.ssk` into the library, `--export` included, so redirect `XDG_DATA_HOME` when trying it rather than filling your own snapshots folder:
+
+```bash
+XDG_DATA_HOME=/tmp/try ./src/SnapShotKit.Editor/bin/Debug/net10.0/snapshotkit-editor diagram.png
+```
+
 ```bash
 dotnet run --project src/SnapShotKit.Spike.PortalCapture -- --iterations 5 --out ./spike-output
 ```
@@ -68,7 +74,7 @@ Set `SNAPSHOTKIT_TRACE=1` on any SnapShotKit process to get stage-by-stage D-Bus
 | `snapshotkit-capture` | Owns libpipewire. Answers `grab` over a pipe, writes frames into a shared file in `XDG_RUNTIME_DIR`. |
 | `snapshotkit-overlay` | Avalonia. Spawned per capture, reports the chosen region on stdout, exits. |
 | `snapshotkit` | Thin AOT client. Turns a keypress into a D-Bus call. |
-| `snapshotkit-editor` | Avalonia. Opens a `.ssk` snapshot for annotation, or the library when given none. Standalone, not part of the capture path. |
+| `snapshotkit-editor` | Avalonia. Opens a `.ssk` snapshot for annotation, an ordinary image by wrapping it in one, or the library when given none. Standalone, not part of the capture path. |
 
 The splits are not stylistic. Capture is separate because libpipewire cannot be driven from inside the .NET process; the overlay is separate because a resident Avalonia costs 98 MB and never gives it back.
 
@@ -103,6 +109,8 @@ The same theme also claims keys. A text box with `AcceptsReturn` marks Enter han
 ## Where things are written
 
 `~/Pictures/snapshotkit/` is for exports only, and nothing else may write there: it is the one directory the user browses. `.ssk` working documents go to `~/.local/share/snapshotkit/snapshots/`, since they are application data rather than pictures. `SnapShotKitPaths` is the only place these are decided.
+
+An imported image lands there too, and never beside the file it came from. Opening somebody's picture is permission to read it, not to write a sidecar into the folder it lives in.
 
 ## Platform rules that are easy to get wrong
 

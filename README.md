@@ -8,6 +8,8 @@ The result opens in an editor for arrows, boxes, blur, text and numbered markers
 
 Annotations are kept as objects alongside the untouched capture, so anything drawn can be moved, restyled or removed next week, and the picture underneath is never modified. Exporting to PNG, JPEG or WebP renders the document rather than being the document.
 
+An image that was never captured here can be annotated too. Open one from the File menu, or right-click it in the file manager and open it with SnapShotKit, and it is wrapped in a snapshot of its own; the file you pointed at is only read.
+
 Target platform is Fedora on GNOME Wayland.
 
 ## Installing
@@ -49,9 +51,10 @@ snapshotkit capture              # capture, and choose a region
 snapshotkit capture --after 5    # wait first, for menus that close on a keypress
 snapshotkit-editor               # the library
 snapshotkit-editor shot.ssk      # one snapshot
+snapshotkit-editor diagram.png   # any image, brought in as a snapshot
 ```
 
-Both appear in the applications list as **SnapShotKit** and **Take a Screenshot**, and `.ssk` files open in the editor from the file manager.
+Both appear in the applications list as **SnapShotKit** and **Take a Screenshot**. `.ssk` files open in the editor from the file manager, and any PNG, JPEG, WebP, BMP, GIF or TIFF can be sent to it through **Open With**.
 
 The panel menu offers a delayed capture, the editor and the snapshots folder.
 

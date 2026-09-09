@@ -80,6 +80,18 @@ The canvas is recorded as a rectangle rather than a size, because it is not obli
 
 Snapshots are numbered, `snapshot-01.ssk` upwards, because they are working documents a person refers to by name. Straight captures that skip the editor are timestamped instead, since nobody refers to those by number.
 
+## A picture that was not captured here
+
+A screenshot somebody sent, a diagram exported from something else, a photograph: any of these can be annotated, and none of them arrive as a snapshot. Opening one wraps it in a new `.ssk` beside the captures, and everything after that is the ordinary path. The alternative, an editor that sometimes has a document and sometimes only a picture, would mean every command asking which kind it was looking at; there is one kind of open document, and this is what makes that true.
+
+The file the user pointed at is only read. Annotations have nowhere to live inside a PNG, so editing one in place would mean either flattening the drawing into somebody's original or writing a sidecar next to it, and both are things a screenshot tool should not do to a folder it was invited into once.
+
+A PNG keeps its bytes exactly as they were, since it is already in the format the container holds and re-encoding it could only lose a colour profile or a bit depth for nothing. Anything else is decoded and written as PNG once, on the way in, and never again. What decides is what the file turns out to be rather than what it is called: a JPEG named `.png` is common enough, and passing its bytes through unread would leave a JPEG in an entry called `original.png`.
+
+The snapshot is named after the file it came from rather than given the next capture number, because an imported picture already has a name its owner chose and `diagram.ssk` beside `diagram.png` is the connection numbering would throw away. Colliding names take a suffix.
+
+Reaching it is deliberately two ways round. **File ▸ Open image** is for somebody already in the editor; the desktop entry lists the image types it decodes, so the file manager offers SnapShotKit under **Open With** for somebody who is not. Listing the types there is what puts it in that menu, and it does not make SnapShotKit the default handler for images: that stays whatever the user has already chosen.
+
 ## The editor
 
 `snapshotkit-editor` is a standalone tool. Editing a snapshot has nothing to do with taking one, and the two are wanted at different times, so the editor is never on the capture path and the daemon merely launches it and forgets about it.

@@ -102,6 +102,15 @@ public sealed class EditorWindow : Window
     /// <summary>Where the framed canvas sat when a canvas drag began, in the mat's own coordinates.</summary>
     Point pinned;
 
+    /// <summary>
+    /// What the status line should say about the document opening next, instead of "Opened".
+    ///
+    /// Cleared as it is used, so it only ever describes the one open it was set for. A snapshot
+    /// opened from the strip or the library needs no explanation; one that has just been made out
+    /// of somebody's PNG does.
+    /// </summary>
+    string? openedNote;
+
     /// <param name="opened">
     /// Named for what it is rather than after the field it fills. The field can now hold nothing,
     /// and a parameter of the same name would shadow it here: anything deferred from this
@@ -512,6 +521,7 @@ public sealed class EditorWindow : Window
         [
             MenuEntry.Item("New capture", "Print", NewCapture),
             MenuEntry.Item("Open…", "Ctrl+O", OpenLibrary),
+            MenuEntry.Item("Open image…", "Ctrl+Shift+O", () => _ = OpenImageAsync()),
             MenuEntry.Separator
         ];
 
@@ -1285,6 +1295,52 @@ public sealed class EditorWindow : Window
     }
 
     /// <summary>
+    /// Brings a picture from anywhere on disk in, and opens it.
+    ///
+    /// It becomes a snapshot on the way in rather than being edited where it lies. Annotations are
+    /// objects kept beside the picture, so there is nowhere to put them in a PNG, and writing over
+    /// somebody's file to make room for them would be the one thing this editor promises not to do.
+    /// </summary>
+    async Task OpenImageAsync()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open an image",
+            AllowMultiple = false,
+            FileTypeFilter = [ImageImport.Filter()]
+        });
+
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } picked)
+        {
+            return;
+        }
+
+        OpenImage(picked);
+    }
+
+    /// <summary>Brings the picture at <paramref name="picked"/> in as a snapshot, and opens it.</summary>
+    void OpenImage(string picked)
+    {
+        string path;
+
+        try
+        {
+            path = ImageImport.Create(picked);
+        }
+        catch (Exception exception)
+        {
+            Report($"Could not open {Path.GetFileName(picked)}: {exception.Message}");
+            return;
+        }
+
+        // Said once, and said instead of the plain "Opened" the strip and the library get: a
+        // snapshot appearing under a name the user did not choose is worth explaining the first
+        // time, and afterwards it is an ordinary document like any other.
+        openedNote = $"Imported {Path.GetFileName(picked)} as {Path.GetFileName(path)}";
+        OpenSnapshot(path);
+    }
+
+    /// <summary>
     /// Opens another snapshot in this window.
     ///
     /// In place rather than by opening a second window and closing this one. Closing the window that
@@ -1293,6 +1349,11 @@ public sealed class EditorWindow : Window
     /// </summary>
     async void OpenSnapshot(string path)
     {
+        // Taken now rather than read at the end, so an open that is declined or fails cannot leave
+        // a note behind to describe the next one.
+        var note = openedNote;
+        openedNote = null;
+
         if (snapshot is not null && string.Equals(path, snapshot.Path, StringComparison.Ordinal))
         {
             return;
@@ -1347,7 +1408,8 @@ public sealed class EditorWindow : Window
 
         SetTool(tool);
         RefreshRecent();
-        Report($"Opened {Path.GetFileName(next.Path)}");
+
+        Report(note ?? $"Opened {Path.GetFileName(next.Path)}");
     }
 
     void RefreshRecent()
@@ -1506,6 +1568,10 @@ public sealed class EditorWindow : Window
         {
             switch (e.Key)
             {
+                case Key.O when control && shift:
+                    _ = OpenImageAsync();
+                    break;
+
                 case Key.O or Key.L when control:
                     OpenLibrary();
                     break;
@@ -1548,6 +1614,10 @@ public sealed class EditorWindow : Window
 
                 case Key.C:
                     CopyToClipboard();
+                    return;
+
+                case Key.O when shift:
+                    _ = OpenImageAsync();
                     return;
 
                 case Key.O or Key.L:

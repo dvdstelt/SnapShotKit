@@ -42,6 +42,7 @@
       <li>Arrows, boxes, blur, text and numbered markers, all editable after the fact</li>
       <li>Blur that obscures the picture without ever covering the annotations over it</li>
       <li>A library of past captures, grouped by day</li>
+      <li>Any image opened from the file manager, wrapped in a snapshot and annotated the same way</li>
       <li>Export to PNG, JPEG or WebP, or copy straight to the clipboard</li>
     </ul>
     <p>

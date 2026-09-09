@@ -91,7 +91,15 @@ internal sealed class EditorApp : Application
                     return;
                 }
 
-                var snapshot = Snapshot.Open(Program.SnapshotPath);
+                // Handed a picture rather than a snapshot, which is what the file manager's "Open
+                // With" does: it becomes one first. Deciding on the name rather than on the
+                // contents, because the desktop entry advertises exactly these types and a file
+                // called `.ssk` that is really a PNG is a different problem from this one.
+                var opening = ImageImport.Handles(Program.SnapshotPath)
+                    ? ImageImport.Create(Program.SnapshotPath)
+                    : Program.SnapshotPath;
+
+                var snapshot = Snapshot.Open(opening);
 
                 if (Program.ExportPath is { } exportPath)
                 {

@@ -81,6 +81,29 @@ public sealed class Snapshot : IDisposable
     }
 
     /// <summary>
+    /// Builds a snapshot around a picture that was not captured here, and writes it to
+    /// <paramref name="path"/>.
+    ///
+    /// It goes out through the same writer a save uses, so a snapshot made this way is the same
+    /// file in every respect as one the daemon wrote. There is nothing in the format that records
+    /// where a picture came from, and there should not be: once it is in, it is a snapshot.
+    /// </summary>
+    public static Snapshot Create(string path, byte[] originalPng, string? meta)
+    {
+        using var stream = new MemoryStream(originalPng);
+        var bitmap = new Bitmap(stream);
+
+        var document = new SnapshotDocument
+        {
+            Canvas = new CanvasArea { Width = bitmap.PixelSize.Width, Height = bitmap.PixelSize.Height }
+        };
+
+        var snapshot = new Snapshot(path, document, originalPng, bitmap, meta);
+        snapshot.Save();
+        return snapshot;
+    }
+
+    /// <summary>
     /// Brings an older document up to the current format.
     ///
     /// One step per version rather than one fix-up for everything older than the current one. Each
