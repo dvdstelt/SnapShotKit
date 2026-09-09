@@ -120,6 +120,54 @@ public static class Export
             handle.Free();
         }
 
+        Unpremultiply(pixels);
+
         return Image.LoadPixelData<Bgra32>(pixels, size.Width, size.Height);
     }
+
+    /// <summary>
+    /// Divides the colour back out by the alpha it was multiplied by.
+    ///
+    /// What comes out of the renderer is premultiplied: a half-transparent red is stored with its
+    /// red already halved, which is the form a compositor wants because blending is then a multiply
+    /// and an add rather than a division per pixel. ImageSharp expects the other form, and reading
+    /// one as the other is silent: every fully opaque pixel is identical either way, so a picture
+    /// looks perfect and only its soft edges are wrong. An arrow crossing the transparent margin
+    /// comes out with a dark fringe along it, darkest where the edge is faintest.
+    ///
+    /// Avalonia's own PNG encoder does this on the way out, which is why exports were right until
+    /// a second encoder was given the same buffer.
+    ///
+    /// A pixel with no alpha at all keeps no colour to recover. It is written as transparent black
+    /// rather than divided by zero, which is what it already was on screen.
+    /// </summary>
+    static void Unpremultiply(byte[] pixels)
+    {
+        for (var index = 0; index < pixels.Length; index += 4)
+        {
+            var alpha = pixels[index + 3];
+
+            if (alpha == 255)
+            {
+                continue;
+            }
+
+            if (alpha == 0)
+            {
+                pixels[index] = 0;
+                pixels[index + 1] = 0;
+                pixels[index + 2] = 0;
+                continue;
+            }
+
+            // Rounded rather than truncated, and clamped: a channel can exceed its alpha by a step
+            // through the renderer's own rounding, and 256 written into a byte would wrap to 0,
+            // turning the brightest edge pixel into the darkest.
+            pixels[index] = Recover(pixels[index], alpha);
+            pixels[index + 1] = Recover(pixels[index + 1], alpha);
+            pixels[index + 2] = Recover(pixels[index + 2], alpha);
+        }
+    }
+
+    static byte Recover(byte channel, byte alpha) => (byte)Math.Min(255, (channel * 255 + alpha / 2) / alpha);
 }
