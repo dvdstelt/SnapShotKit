@@ -44,7 +44,20 @@ build: native
 	@rm -f $(STAGE)/*.dbg
 	@echo "staged in $(STAGE)"
 
-install: build
+# Installs what is already staged, and does not build it.
+#
+# Not because the dependency would be wrong, but because installing needs root and building must
+# not have it. The SDK is very often a user-local install under ~/.dotnet, which root cannot reach
+# through its own PATH, and reaching it anyway by preserving the caller's leaves a working tree
+# full of root-owned build output that the next ordinary build cannot write to.
+#
+# The spec file already builds and installs as two steps, so this only makes the Makefile say what
+# the packaging always assumed.
+install:
+	@test -d $(STAGE) || { \
+		echo "Nothing staged in $(STAGE). Run 'make build' as yourself first, then 'sudo make install'."; \
+		exit 1; \
+	}
 	install -d $(LIBEXEC) $(BIN) $(UNITDIR)
 	cp -r $(STAGE)/. $(LIBEXEC)/
 	chmod 755 $(LIBEXEC)/snapshotkit $(LIBEXEC)/snapshotkitd \
@@ -88,6 +101,19 @@ install: build
 	glib-compile-schemas $(SHARE)/gnome-shell/extensions/$(UUID)/schemas/
 
 	install -Dm644 src/SnapShotKit.Ui/Assets/Fonts/OFL.txt $(SHARE)/licenses/snapshotkit/OFL.txt
+
+	# The caches that decide which application a file manager offers for a file. Without these an
+	# installed-by-hand copy is on disk and invisible: the .ssk association and the image types
+	# under "Open With" both come from here rather than from the files themselves.
+	#
+	# Only for a real installation. Under DESTDIR the files are in a buildroot nobody has installed
+	# yet, and rebuilding the running system's caches from one would be a package build editing the
+	# machine it happens to be running on. RPM has its own file triggers for this.
+	@if [ -z "$(DESTDIR)" ]; then \
+		update-desktop-database $(SHARE)/applications || true; \
+		update-mime-database    $(SHARE)/mime         || true; \
+	fi
+
 	@echo "installed under $(DESTDIR)$(PREFIX)"
 
 uninstall:
