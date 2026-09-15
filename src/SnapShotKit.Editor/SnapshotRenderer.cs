@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 
 namespace SnapShotKit.Editor;
 
@@ -76,27 +77,73 @@ public static class SnapshotRenderer
         }
     }
 
-    /// <summary>The capture and everything on it, positioned in capture pixels from a given corner.</summary>
+    /// <summary>The pictures and everything on them, positioned in capture pixels from a given corner.</summary>
     static void DrawPiece(DrawingContext context, Snapshot snapshot, BlurCache blurs, Point origin, double scale,
         Annotation? suppress)
     {
-        // The capture at its own size, wherever the canvas sits around it. Whatever the canvas
-        // covers beyond the capture is simply not painted, which is what makes it transparent.
-        context.DrawImage(snapshot.Bitmap, new Rect(origin, new Size(
-            snapshot.Bitmap.PixelSize.Width * scale,
-            snapshot.Bitmap.PixelSize.Height * scale)));
+        var layers = snapshot.Document.Layers;
 
         // In the order they are in. What is on top is the user's to decide, which is why every
         // annotation can be moved forward and back; a rule that always put one kind underneath
-        // would quietly override that choice.
-        foreach (var annotation in snapshot.Document.Layers)
+        // would quietly override that choice. The capture is a layer like the rest, usually the
+        // first. Whatever the canvas covers that no picture does is simply not painted, which is
+        // what makes it transparent.
+        for (var index = 0; index < layers.Count; index++)
         {
+            var annotation = layers[index];
+
             if (ReferenceEquals(annotation, suppress))
             {
                 continue;
             }
 
-            DrawAnnotation(context, annotation, blurs, origin, scale);
+            switch (annotation)
+            {
+                case ImageAnnotation image when snapshot.BitmapOf(image.Source) is { } bitmap:
+                    DrawPicture(context, bitmap, image, origin, scale);
+                    break;
+
+                case BlurAnnotation blur:
+                    DrawBlur(context, snapshot, blurs, blur, index, origin, scale);
+                    break;
+
+                default:
+                    DrawAnnotation(context, annotation, blurs, origin, scale);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A picture where its layer puts it, stretched to the layer's size and mirrored as it says.
+    ///
+    /// Mirrored by drawing through a transform about the picture's own centre, so a flipped
+    /// picture occupies exactly the rectangle an unflipped one would: flipping turns it round
+    /// where it stands rather than swinging it across the canvas.
+    /// </summary>
+    static void DrawPicture(DrawingContext context, Bitmap bitmap, ImageAnnotation image, Point origin, double scale)
+    {
+        var destination = new Rect(
+            origin.X + image.X * scale,
+            origin.Y + image.Y * scale,
+            Math.Max(image.Width * scale, 1),
+            Math.Max(image.Height * scale, 1));
+
+        if (!image.FlipHorizontal && !image.FlipVertical)
+        {
+            context.DrawImage(bitmap, destination);
+            return;
+        }
+
+        var centre = destination.Center;
+
+        var mirror = Matrix.CreateTranslation(-centre.X, -centre.Y)
+            * Matrix.CreateScale(image.FlipHorizontal ? -1 : 1, image.FlipVertical ? -1 : 1)
+            * Matrix.CreateTranslation(centre.X, centre.Y);
+
+        using (context.PushTransform(mirror))
+        {
+            context.DrawImage(bitmap, destination);
         }
     }
 
@@ -106,16 +153,16 @@ public static class SnapshotRenderer
     /// Public so that the band's style previews go through it too: a preview drawn by any other
     /// code would eventually stop looking like the thing it promises.
     /// </summary>
-    /// <param name="blurs">The blurred copies of the capture, or null where there is no capture to blur, as in a preview.</param>
+    /// <param name="blurs">
+    /// Unused by anything this draws. A blur and a picture both depend on the document around them,
+    /// what is under the blur and which picture a layer names, so the document's own pass draws
+    /// those, and a preview has neither.
+    /// </param>
     public static void DrawAnnotation(DrawingContext context, Annotation annotation, BlurCache? blurs,
         Point origin, double scale)
     {
         switch (annotation)
         {
-            case BlurAnnotation blur when blurs is not null:
-                DrawBlur(context, blurs, blur, origin, scale);
-                break;
-
             case BoxAnnotation box:
                 DrawBox(context, box, origin, scale);
                 break;
@@ -204,22 +251,45 @@ public static class SnapshotRenderer
         Math.Max(text.FontSize * scale, 1),
         BrushFor(text.Color));
 
-    static void DrawBlur(DrawingContext context, BlurCache blurs, BlurAnnotation blur, Point origin, double scale)
+    /// <summary>
+    /// A blurred region: every picture beneath it, drawn again blurred and clipped to the region.
+    ///
+    /// Each picture is drawn from an already blurred copy of itself, placed and mirrored exactly as
+    /// the picture is, so the blur lines up with what it hides wherever that picture has been moved
+    /// to or however it has been stretched. For the capture at the origin at its own size this is
+    /// pixel for pixel the patch of the blurred capture it always was.
+    ///
+    /// Only pictures below the blur in the stack, and only those it actually overlaps: one pasted
+    /// on top of a blur is meant to be seen, and blurring a picture nothing covers would be a
+    /// full-resolution gaussian for no visible difference.
+    ///
+    /// Nothing else is drawn on it here. A blurred region carries an edge and a caption on the
+    /// editing canvas, but those belong to editing: an exported screenshot must not come out with
+    /// "BLUR 2" printed across the thing the user was hiding.
+    /// </summary>
+    static void DrawBlur(DrawingContext context, Snapshot snapshot, BlurCache blurs, BlurAnnotation blur, int index,
+        Point origin, double scale)
     {
-        var source = new Rect(blur.X, blur.Y, Math.Max(blur.Width, 1), Math.Max(blur.Height, 1));
+        var region = new Rect(blur.X, blur.Y, Math.Max(blur.Width, 1), Math.Max(blur.Height, 1));
 
         var destination = new Rect(
-            origin.X + blur.X * scale,
-            origin.Y + blur.Y * scale,
-            Math.Max(blur.Width * scale, 1),
-            Math.Max(blur.Height * scale, 1));
+            origin.X + region.X * scale,
+            origin.Y + region.Y * scale,
+            region.Width * scale,
+            region.Height * scale);
 
-        // The region is simply the same patch of an already blurred copy of the capture.
-        //
-        // Nothing else is drawn on it here. A blurred region carries an edge and a caption on the
-        // editing canvas, but those belong to editing: an exported screenshot must not come out
-        // with "BLUR 2" printed across the thing the user was hiding.
-        context.DrawImage(blurs.For(blur.Strength), source, destination);
+        using (context.PushClip(destination))
+        {
+            for (var below = 0; below < index; below++)
+            {
+                if (snapshot.Document.Layers[below] is ImageAnnotation image
+                    && region.Intersects(new Rect(image.X, image.Y, image.Width, image.Height))
+                    && blurs.For(image.Source, blur.Strength) is { } blurred)
+                {
+                    DrawPicture(context, blurred, image, origin, scale);
+                }
+            }
+        }
     }
 
     static void DrawArrow(DrawingContext context, ArrowAnnotation arrow, Point origin, double scale)

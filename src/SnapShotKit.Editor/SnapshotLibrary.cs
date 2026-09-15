@@ -57,7 +57,7 @@ public static class SnapshotLibrary
             using var json = JsonDocument.Parse(stream);
 
             var canvas = json.RootElement.GetProperty("canvas");
-            var layers = json.RootElement.TryGetProperty("layers", out var value) ? value.GetArrayLength() : 0;
+            var layers = json.RootElement.TryGetProperty("layers", out var value) ? Objects(value).Count() : 0;
 
             return $"{canvas.GetProperty("width").GetInt32()} x {canvas.GetProperty("height").GetInt32()}"
                 + $"   {layers} annotation(s)";
@@ -67,6 +67,17 @@ public static class SnapshotLibrary
             return $"could not be read: {exception.Message}";
         }
     }
+
+    /// <summary>
+    /// The layers worth describing, which is every one but the capture's own.
+    ///
+    /// A snapshot written since the capture became a layer has one before anything is drawn on it,
+    /// and "1 image" under every capture in the library says nothing about any of them. A picture
+    /// pasted in is something somebody did, and is counted like an arrow is.
+    /// </summary>
+    static IEnumerable<JsonElement> Objects(JsonElement layers) => layers.EnumerateArray().Where(layer =>
+        !(layer.TryGetProperty("type", out var type) && type.GetString() == "image"
+            && layer.TryGetProperty("source", out var source) && source.GetString() == ImageAnnotation.Capture));
 
     /// <summary>
     /// What has been drawn on a capture, in words.
@@ -88,14 +99,16 @@ public static class SnapshotLibrary
             using var stream = document.Open();
             using var json = JsonDocument.Parse(stream);
 
-            if (!json.RootElement.TryGetProperty("layers", out var layers) || layers.GetArrayLength() == 0)
+            var objects = json.RootElement.TryGetProperty("layers", out var layers) ? Objects(layers).ToList() : [];
+
+            if (objects.Count == 0)
             {
                 return "no objects";
             }
 
             var counts = new Dictionary<string, int>();
 
-            foreach (var layer in layers.EnumerateArray())
+            foreach (var layer in objects)
             {
                 var kind = layer.TryGetProperty("type", out var type) ? type.GetString() ?? "object" : "object";
                 counts[kind] = counts.GetValueOrDefault(kind) + 1;
@@ -105,7 +118,7 @@ public static class SnapshotLibrary
             // than the total, so it collapses to a count.
             if (counts.Count > 2)
             {
-                return $"{layers.GetArrayLength()} objects";
+                return $"{objects.Count} objects";
             }
 
             // Ordered, so the same document always describes itself the same way: a dictionary's

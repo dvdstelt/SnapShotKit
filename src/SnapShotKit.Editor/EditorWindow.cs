@@ -120,7 +120,7 @@ public sealed class EditorWindow : Window
     public EditorWindow(Snapshot opened)
     {
         snapshot = opened;
-        blurs = new BlurCache(opened.OriginalPng);
+        blurs = new BlurCache(opened);
         canvas = new CanvasView(opened, blurs);
 
         Title = $"SnapShotKit - {Path.GetFileName(opened.Path)}";
@@ -1230,7 +1230,7 @@ public sealed class EditorWindow : Window
 
             // Both hold full-resolution bitmaps in native memory the collector cannot see, so a copy
             // made from the strip releases them rather than leaving them to finalisers.
-            using var blurs = new BlurCache(other.OriginalPng);
+            using var blurs = new BlurCache(other);
 
             var png = Export.ToPng(other, blurs);
 
@@ -1421,7 +1421,7 @@ public sealed class EditorWindow : Window
         var zoom = canvas?.Zoom;
 
         snapshot = next;
-        blurs = new BlurCache(next.OriginalPng);
+        blurs = new BlurCache(next);
         canvas = new CanvasView(next, blurs) { Zoom = zoom };
         WireCanvas();
         framedCanvas = ShowCanvas();
@@ -1506,7 +1506,10 @@ public sealed class EditorWindow : Window
             var many => $"   ·   {many} cuts"
         };
 
-        status.Text = $"{dimensions}{cuts}   ·   {snapshot.Document.Layers.Count} object(s)   ·   {selection}";
+        // The capture is a layer, but not an object anybody put there.
+        var objects = snapshot.Document.Layers.Count(layer => layer is not ImageAnnotation { IsCapture: true });
+
+        status.Text = $"{dimensions}{cuts}   ·   {objects} object(s)   ·   {selection}";
     }
 
     /// <summary>Where in the stacking order to move something.</summary>

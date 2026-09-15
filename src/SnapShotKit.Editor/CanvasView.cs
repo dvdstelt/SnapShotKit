@@ -1671,6 +1671,9 @@ public sealed class CanvasView : Decorator
 
             var hit = annotation switch
             {
+                // Pictures are the ground everything else is drawn on, and are not picked up here.
+                ImageAnnotation => false,
+
                 // A box without a fill is a border around something the user still wants to work
                 // on. Treating its whole interior as the box would make everything inside it
                 // unreachable, so only the border itself is hit.

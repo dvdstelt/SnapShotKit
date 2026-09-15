@@ -5,11 +5,12 @@ using Avalonia.Media.Imaging;
 namespace SnapShotKit.Editor;
 
 /// <summary>
-/// An open `.ssk` file: the untouched capture, plus the annotations layered over it.
+/// An open `.ssk` file: the untouched capture, any pictures pasted in beside it, and the annotations
+/// layered over them.
 ///
-/// The original PNG bytes are kept exactly as they were read and written back unchanged on save.
-/// Re-encoding the capture every time it is saved would quietly degrade it, and the promise of the
-/// format is that the capture never changes.
+/// The original PNG bytes are kept exactly as they were read and written back unchanged on save,
+/// and so are those of every pasted picture. Re-encoding them every time the document is saved
+/// would quietly degrade them, and the promise of the format is that a picture never changes.
 /// </summary>
 public sealed class Snapshot : IDisposable
 {
@@ -19,6 +20,9 @@ public sealed class Snapshot : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    /// <summary>Where pasted pictures are kept inside the archive, each named after its own contents.</summary>
+    const string ImageFolder = "images/";
+
     Snapshot(string path, SnapshotDocument document, byte[] originalPng, Bitmap bitmap, string? meta)
     {
         Path = path;
@@ -27,7 +31,22 @@ public sealed class Snapshot : IDisposable
         Bitmap = bitmap;
         Meta = meta;
         OriginFolder = FolderOf(meta);
+
+        pictures[ImageAnnotation.Capture] = new Picture(originalPng, bitmap);
     }
+
+    /// <summary>A picture's bytes as they arrived, and the decoded bitmap drawn from them, which is null when they would not decode.</summary>
+    sealed record Picture(byte[] Png, Bitmap? Bitmap);
+
+    /// <summary>
+    /// Every picture this snapshot holds, by the entry it is kept in.
+    ///
+    /// Only ever added to while the document is open. A picture pasted and then deleted is still
+    /// wanted by the undo history, which holds layers rather than pixels, so dropping it here would
+    /// leave an undone paste pointing at nothing. What is written out is only what the layers still
+    /// use, so nothing deleted survives a save.
+    /// </summary>
+    readonly Dictionary<string, Picture> pictures = new(StringComparer.Ordinal);
 
     public string Path { get; private set; }
 
@@ -35,6 +54,7 @@ public sealed class Snapshot : IDisposable
 
     public byte[] OriginalPng { get; }
 
+    /// <summary>The capture, decoded. Wherever its layer has been moved to, this is the picture as taken.</summary>
     public Bitmap Bitmap { get; }
 
     /// <summary>Carried through untouched so saving never discards what the daemon recorded.</summary>
@@ -101,17 +121,47 @@ public sealed class Snapshot : IDisposable
     /// <summary>Called when the cuts have changed, so the layout is worked out again.</summary>
     public void Recut() => layout = null;
 
+    /// <summary>The decoded picture kept under <paramref name="source"/>, or null when there is none to draw.</summary>
+    public Bitmap? BitmapOf(string source) => pictures.GetValueOrDefault(source)?.Bitmap;
+
+    /// <summary>The bytes of the picture kept under <paramref name="source"/>, exactly as they arrived.</summary>
+    public byte[]? PngOf(string source) => pictures.GetValueOrDefault(source)?.Png;
+
+    /// <summary>
+    /// Takes a picture in, and returns the entry it is kept under.
+    ///
+    /// Named after a hash of its bytes, so pasting the same picture twice keeps one copy of it, and
+    /// a name can never come to mean a different picture from the one it meant when a layer was
+    /// pointed at it. Decoded here rather than when first drawn, so a clipboard holding something
+    /// that is not a picture after all is refused at the paste instead of leaving an empty layer.
+    /// </summary>
+    public string AddImage(byte[] png)
+    {
+        var name = ImageFolder + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(png))[..16] + ".png";
+
+        if (!pictures.ContainsKey(name))
+        {
+            using var stream = new MemoryStream(png);
+            pictures[name] = new Picture(png, new Bitmap(stream));
+        }
+
+        return name;
+    }
+
     public static Snapshot Open(string path)
     {
         using var archive = ZipFile.OpenRead(path);
 
-        var originalPng = Read(archive, "original.png")
+        var originalPng = Read(archive, ImageAnnotation.Capture)
             ?? throw new InvalidDataException($"{path} has no original.png, so it is not a snapshot.");
 
+        // A snapshot with no document at all predates every version, and is migrated from nothing.
+        // Given the current version instead it would be taken as already having its capture layer,
+        // and open as an empty canvas.
         var documentJson = ReadText(archive, "document.json");
         var document = documentJson is null
-            ? new SnapshotDocument()
-            : JsonSerializer.Deserialize<SnapshotDocument>(documentJson, Json) ?? new SnapshotDocument();
+            ? new SnapshotDocument { Version = 0 }
+            : JsonSerializer.Deserialize<SnapshotDocument>(documentJson, Json) ?? new SnapshotDocument { Version = 0 };
 
         using var stream = new MemoryStream(originalPng);
         var bitmap = new Bitmap(stream);
@@ -123,9 +173,36 @@ public sealed class Snapshot : IDisposable
             document.Canvas = new CanvasArea { Width = bitmap.PixelSize.Width, Height = bitmap.PixelSize.Height };
         }
 
-        Migrate(document);
+        Migrate(document, bitmap.PixelSize);
 
-        return new Snapshot(path, document, originalPng, bitmap, ReadText(archive, "meta.json"));
+        var snapshot = new Snapshot(path, document, originalPng, bitmap, ReadText(archive, "meta.json"));
+
+        foreach (var entry in archive.Entries.Where(entry => entry.FullName.StartsWith(ImageFolder, StringComparison.Ordinal)))
+        {
+            snapshot.pictures[entry.FullName] = Load(Read(archive, entry.FullName)!);
+        }
+
+        return snapshot;
+    }
+
+    /// <summary>
+    /// A pasted picture as it was kept.
+    ///
+    /// One that will not decode still opens, and simply is not drawn. It would be a poor trade to
+    /// refuse a whole document, capture and annotations and all, over one damaged paste, and its
+    /// bytes are kept so saving does not finish off what might yet be recovered.
+    /// </summary>
+    static Picture Load(byte[] png)
+    {
+        try
+        {
+            using var stream = new MemoryStream(png);
+            return new Picture(png, new Bitmap(stream));
+        }
+        catch (Exception)
+        {
+            return new Picture(png, null);
+        }
     }
 
     /// <summary>
@@ -143,7 +220,8 @@ public sealed class Snapshot : IDisposable
 
         var document = new SnapshotDocument
         {
-            Canvas = new CanvasArea { Width = bitmap.PixelSize.Width, Height = bitmap.PixelSize.Height }
+            Canvas = new CanvasArea { Width = bitmap.PixelSize.Width, Height = bitmap.PixelSize.Height },
+            Layers = [CaptureLayer(bitmap.PixelSize)]
         };
 
         var snapshot = new Snapshot(path, document, originalPng, bitmap, meta);
@@ -169,11 +247,15 @@ public sealed class Snapshot : IDisposable
     /// was the capture. Version 4 added the bands cut out of the picture, and an older document has
     /// none. Neither needs a fix-up, only the version.
     ///
+    /// Version 5 made the capture a layer. An older document drew it underneath everything at its
+    /// own size and at the origin, so that is where its layer goes: the bottom of the stack, at the
+    /// origin, at its own size.
+    ///
     /// A document from further ahead than this build is left exactly as it is, version and all.
     /// There is nothing here that could repair one, and stamping it back down to this version would
     /// be this build telling a later one that migrations it has never heard of have already run.
     /// </summary>
-    static void Migrate(SnapshotDocument document)
+    static void Migrate(SnapshotDocument document, Avalonia.PixelSize capture)
     {
         if (document.Version >= SnapshotDocument.Current)
         {
@@ -190,8 +272,21 @@ public sealed class Snapshot : IDisposable
             document.Layers.AddRange(rest);
         }
 
+        if (document.Version < 5)
+        {
+            document.Layers.Insert(0, CaptureLayer(capture));
+        }
+
         document.Version = SnapshotDocument.Current;
     }
+
+    /// <summary>The capture where it was taken: at the origin, at its own size, facing the way it did.</summary>
+    static ImageAnnotation CaptureLayer(Avalonia.PixelSize capture) => new()
+    {
+        Source = ImageAnnotation.Capture,
+        Width = capture.Width,
+        Height = capture.Height
+    };
 
     public void SaveAs(string path)
     {
@@ -209,9 +304,23 @@ public sealed class Snapshot : IDisposable
                 WriteText(archive, "meta.json", Meta);
             }
 
-            var original = archive.CreateEntry("original.png", CompressionLevel.NoCompression);
-            using var stream = original.Open();
-            stream.Write(OriginalPng);
+            WriteBytes(archive, ImageAnnotation.Capture, OriginalPng);
+
+            // Only the pictures something still stands on. One pasted and then deleted is kept in
+            // memory for the undo history's sake, but a saved document has no history to want it.
+            var used = Document.Layers
+                .OfType<ImageAnnotation>()
+                .Select(image => image.Source)
+                .Where(source => source != ImageAnnotation.Capture)
+                .Distinct(StringComparer.Ordinal);
+
+            foreach (var source in used)
+            {
+                if (PngOf(source) is { } png)
+                {
+                    WriteBytes(archive, source, png);
+                }
+            }
         }
 
         File.Move(temporary, path, overwrite: true);
@@ -240,8 +349,22 @@ public sealed class Snapshot : IDisposable
         return bytes is null ? null : System.Text.Encoding.UTF8.GetString(bytes);
     }
 
-    /// <summary>The decoded capture is native memory the collector cannot see, so it is released deliberately.</summary>
-    public void Dispose() => Bitmap.Dispose();
+    /// <summary>Already compressed by the PNG encoder, so the zip is not asked to try again.</summary>
+    static void WriteBytes(ZipArchive archive, string name, byte[] bytes)
+    {
+        var entry = archive.CreateEntry(name, CompressionLevel.NoCompression);
+        using var stream = entry.Open();
+        stream.Write(bytes);
+    }
+
+    /// <summary>Decoded pictures are native memory the collector cannot see, so they are released deliberately.</summary>
+    public void Dispose()
+    {
+        foreach (var picture in pictures.Values)
+        {
+            picture.Bitmap?.Dispose();
+        }
+    }
 
     static void WriteText(ZipArchive archive, string name, string content)
     {

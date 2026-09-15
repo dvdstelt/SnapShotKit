@@ -15,6 +15,7 @@ namespace SnapShotKit.Editor;
 [JsonDerivedType(typeof(BoxAnnotation), "box")]
 [JsonDerivedType(typeof(TextAnnotation), "text")]
 [JsonDerivedType(typeof(StepAnnotation), "step")]
+[JsonDerivedType(typeof(ImageAnnotation), "image")]
 public abstract class Annotation
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
@@ -267,6 +268,50 @@ public sealed class StepAnnotation : Annotation
 }
 
 /// <summary>
+/// A picture standing on the canvas: the capture itself, or one pasted in beside it.
+///
+/// The capture is one of these rather than a backdrop drawn before everything else, so that it can
+/// be selected, moved, resized and flipped like anything pasted over it. The pixels are still never
+/// touched. What the layer holds is where the picture is placed and which way round it faces; the
+/// picture is an entry in the snapshot, named by <see cref="Source"/>, and is kept exactly as it
+/// arrived.
+///
+/// Nothing else is positioned against it. Coordinates are measured from where the capture's corner
+/// was when it was taken, and they stay measured from there when the capture is moved, so an arrow
+/// drawn on the picture stays where it was put rather than being dragged along.
+/// </summary>
+public sealed class ImageAnnotation : RectAnnotation
+{
+    /// <summary>The entry the capture is kept in, which is the one picture every snapshot has.</summary>
+    public const string Capture = "original.png";
+
+    /// <summary>The entry in the snapshot holding the picture.</summary>
+    public string Source { get; set; } = Capture;
+
+    /// <summary>Mirrored left to right.</summary>
+    public bool FlipHorizontal { get; set; }
+
+    /// <summary>Mirrored top to bottom.</summary>
+    public bool FlipVertical { get; set; }
+
+    [JsonIgnore]
+    public bool IsCapture => Source == Capture;
+
+    public override Annotation Copy() => new ImageAnnotation
+    {
+        Id = Id, X = X, Y = Y, Width = Width, Height = Height,
+        Source = Source, FlipHorizontal = FlipHorizontal, FlipVertical = FlipVertical
+    };
+
+    /// <summary>A picture has no look to take on. Where it is and which way it faces are not style.</summary>
+    public override void AdoptStyle(Annotation style)
+    {
+    }
+
+    public override bool WearsStyle(Annotation style) => false;
+}
+
+/// <summary>
 /// Which way a cut runs, which is to say what it takes out of the picture.
 ///
 /// Written out by name rather than as a number, for the same reason a colour is written as hex:
@@ -337,8 +382,12 @@ public sealed class SnapshotDocument
     ///
     /// Version 4 added the bands cut out of the picture. An older document has none, which is what
     /// it meant, so there is nothing to fix up.
+    ///
+    /// Version 5 put the capture among the layers, so that it can be moved and resized like a
+    /// picture pasted beside it. An older document is given one at the bottom of the stack, at its
+    /// own size and at the origin, which is exactly where it was always drawn.
     /// </summary>
-    public const int Current = 4;
+    public const int Current = 5;
 
     public int Version { get; set; } = Current;
 

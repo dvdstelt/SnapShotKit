@@ -105,7 +105,7 @@ internal sealed class EditorApp : Application
                 {
                     // Rendering needs the graphics stack, so this runs inside the app lifetime even
                     // though no window is ever shown.
-                    using var blurs = new BlurCache(snapshot.OriginalPng);
+                    using var blurs = new BlurCache(snapshot);
 
                     try
                     {
