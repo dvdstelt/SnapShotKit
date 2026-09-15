@@ -454,6 +454,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Undo", "Ctrl+Z", Undo),
             MenuEntry.Item("Redo", "Ctrl+Shift+Z", Redo),
             MenuEntry.Separator,
+            MenuEntry.Item("Paste picture", "Ctrl+V", () => _ = PasteAsync()),
             MenuEntry.Item("Delete", "Del", () => canvas?.DeleteSelected()),
             MenuEntry.Item("Deselect", "Esc", () => canvas?.Select(null)),
             MenuEntry.Separator,
@@ -466,7 +467,11 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Bring to front", "Ctrl+Shift+]", () => Arrange(Order.Front)),
             MenuEntry.Item("Bring forward", "Ctrl+]", () => Arrange(Order.Forward)),
             MenuEntry.Item("Send backward", "Ctrl+[", () => Arrange(Order.Backward)),
-            MenuEntry.Item("Send to back", "Ctrl+Shift+[", () => Arrange(Order.Back))
+            MenuEntry.Item("Send to back", "Ctrl+Shift+[", () => Arrange(Order.Back)),
+            MenuEntry.Separator,
+            MenuEntry.Item("Flip horizontally", null, () => canvas?.Flip(horizontally: true)),
+            MenuEntry.Item("Flip vertically", null, () => canvas?.Flip(horizontally: false)),
+            MenuEntry.Item("Actual size", null, () => canvas?.RestorePictureSize())
         ]);
 
         menu.Add("Draw", () => snapshot is null ? NoCapture :
@@ -691,6 +696,9 @@ public sealed class EditorWindow : Window
         band.CanvasHeightChosen += height => canvas?.ProposeCanvasSize(null, height);
         band.CanvasFitRequested += FitCanvasToPictures;
 
+        band.PictureFlipRequested += horizontally => canvas?.Flip(horizontally);
+        band.PictureSizeRestoreRequested += () => canvas?.RestorePictureSize();
+
         band.ZoomStepped += direction => StepZoom(direction);
         band.ZoomFitRequested += () => SetZoom(null);
     }
@@ -787,6 +795,7 @@ public sealed class EditorWindow : Window
         BlurAnnotation => EditorTool.Blur,
         TextAnnotation => EditorTool.Text,
         StepAnnotation => EditorTool.Step,
+        ImageAnnotation => EditorTool.Select,
         _ => tool
     };
 
@@ -1328,6 +1337,71 @@ public sealed class EditorWindow : Window
         }
     }
 
+    /// <summary>
+    /// Pastes the picture on the clipboard onto the canvas.
+    ///
+    /// The select tool is taken up as it lands, because the picture arrives selected and the next
+    /// thing done with a pasted picture is nearly always moving it. With a drawing tool in hand the
+    /// first press on it would draw rather than pick it up.
+    /// </summary>
+    async Task PasteAsync()
+    {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
+        // Asked of the application that copied, which can take its time. What is on the canvas by
+        // the time it answers may not be what was there when Ctrl+V was pressed.
+        var pastingInto = snapshot;
+        var (png, problem) = await ClipboardPicture.ReadAsync();
+
+        if (!ReferenceEquals(snapshot, pastingInto) || canvas is null)
+        {
+            return;
+        }
+
+        if (png is null)
+        {
+            Report(problem);
+            return;
+        }
+
+        string source;
+
+        try
+        {
+            source = snapshot.AddImage(png);
+        }
+        catch (Exception exception)
+        {
+            Report($"Could not paste: {exception.Message}");
+            return;
+        }
+
+        var size = snapshot.BitmapOf(source)!.PixelSize;
+
+        SetTool(EditorTool.Select);
+        canvas.Paste(source, size, VisibleCentre());
+
+        Report($"Pasted a {size.Width} × {size.Height} picture");
+    }
+
+    /// <summary>The middle of the part of the picture on screen, in image pixels.</summary>
+    Point VisibleCentre()
+    {
+        if (canvas is null)
+        {
+            return default;
+        }
+
+        var middle = new Point(scroller.Bounds.Width / 2, scroller.Bounds.Height / 2);
+
+        return scroller.TranslatePoint(middle, canvas) is { } onCanvas
+            ? canvas.ToImagePoint(onCanvas)
+            : default;
+    }
+
     void OpenLibrary()
     {
         var window = new LibraryWindow();
@@ -1660,6 +1734,10 @@ public sealed class EditorWindow : Window
 
                 case Key.C:
                     CopyToClipboard();
+                    return;
+
+                case Key.V:
+                    _ = PasteAsync();
                     return;
 
                 case Key.O when shift:

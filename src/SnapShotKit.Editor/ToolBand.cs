@@ -71,6 +71,7 @@ public sealed class ToolBand : Border
     readonly Control canvasWidthGroup;
     readonly Control canvasHeightGroup;
     readonly Control canvasFitGroup;
+    readonly Control pictureGroup;
 
     readonly TextBlock zoomLabel = Labels.Body("100%", 12.5, Tokens.Neutral800Brush);
 
@@ -140,7 +141,17 @@ public sealed class ToolBand : Border
         canvasHeightGroup = Group("Height", heightBox);
         canvasFitGroup = Group("Canvas", TextAction("Fit to pictures", () => CanvasFitRequested?.Invoke()));
 
-
+        pictureGroup = Group("Picture", new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = Tokens.Space.S1,
+            Children =
+            {
+                TextAction("Flip horizontally", () => PictureFlipRequested?.Invoke(true)),
+                TextAction("Flip vertically", () => PictureFlipRequested?.Invoke(false)),
+                TextAction("Actual size", () => PictureSizeRestoreRequested?.Invoke())
+            }
+        });
 
         // Every settings group lives in this one strip, in a fixed order. Only the ones the active
         // tool uses are visible; the rest collapse, and the ones that remain do not move.
@@ -155,7 +166,7 @@ public sealed class ToolBand : Border
                  {
                      styleGroup, colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
                      headGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
-                     cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup
+                     cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, pictureGroup
                  })
         {
             settings.Children.Add(group);
@@ -239,6 +250,11 @@ public sealed class ToolBand : Border
     public event Action<int>? CanvasWidthChosen;
     public event Action<int>? CanvasHeightChosen;
     public event Action? CanvasFitRequested;
+
+    /// <summary>Mirror the selected picture: true left to right, false top to bottom.</summary>
+    public event Action<bool>? PictureFlipRequested;
+
+    public event Action? PictureSizeRestoreRequested;
     public event Action? UndoRequested;
     public event Action? RedoRequested;
 
@@ -511,6 +527,11 @@ public sealed class ToolBand : Border
             BlurAnnotation => EditorTool.Blur,
             TextAnnotation => EditorTool.Text,
             StepAnnotation => EditorTool.Step,
+
+            // A picture has no drawing tool of its own, and none of the settings a tool has. Select
+            // is the tool that picks one up, and it shows nothing, which leaves the picture's own
+            // group alone on the band.
+            ImageAnnotation => EditorTool.Select,
             _ => tool
         };
 
@@ -545,6 +566,7 @@ public sealed class ToolBand : Border
         canvasWidthGroup.IsVisible = kind is EditorTool.Canvas;
         canvasHeightGroup.IsVisible = kind is EditorTool.Canvas;
         canvasFitGroup.IsVisible = kind is EditorTool.Canvas;
+        pictureGroup.IsVisible = selected is ImageAnnotation;
 
         // A fill colour only means anything when there is a fill to colour.
         var filled = selected is BoxAnnotation box ? box.HasFill : defaults.BoxFilled;

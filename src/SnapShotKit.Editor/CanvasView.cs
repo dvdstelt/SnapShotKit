@@ -1091,6 +1091,105 @@ public sealed class CanvasView : Decorator
     }
 
     /// <summary>
+    /// Puts a picture on the canvas, on top of everything, and selects it.
+    ///
+    /// At its own size, centred on <paramref name="centre"/>, which is the middle of whatever part
+    /// of the canvas is on screen: a picture pasted somewhere out of sight looks like a paste that
+    /// did nothing. Kept inside the canvas where it fits, and where it does not it starts at the
+    /// canvas's top-left corner, so the canvas grows right and down to take it in rather than
+    /// spreading out on every side around what was already there.
+    /// </summary>
+    /// <param name="source">The entry the snapshot keeps the picture under.</param>
+    /// <param name="centre">In image pixels.</param>
+    public void Paste(string source, Avalonia.PixelSize size, Point centre)
+    {
+        CommitEdit();
+
+        var bounds = CanvasRect();
+
+        var picture = new ImageAnnotation
+        {
+            Source = source,
+            X = Place(centre.X, size.Width, bounds.X, bounds.Width),
+            Y = Place(centre.Y, size.Height, bounds.Y, bounds.Height),
+            Width = size.Width,
+            Height = size.Height
+        };
+
+        BeforeChange?.Invoke();
+
+        snapshot.Document.Layers.Add(picture);
+
+        // Measured against the canvas as it stands, so the canvas simply grows to take in whatever
+        // of the picture it does not already cover.
+        GrowCanvasAround(picture, bounds);
+
+        Select(picture);
+        Changed?.Invoke();
+
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    /// <summary>Where along one side a pasted picture starts. See <see cref="Paste"/>.</summary>
+    static double Place(double centre, double extent, double from, double room) => extent <= room
+        ? Math.Clamp(Math.Round(centre - extent / 2), from, from + room - extent)
+        : from;
+
+    /// <summary>Mirrors the selected picture, as one undoable step. Anything else selected is left alone.</summary>
+    public void Flip(bool horizontally)
+    {
+        if (Selected is not ImageAnnotation picture)
+        {
+            return;
+        }
+
+        Edit(() =>
+        {
+            if (horizontally)
+            {
+                picture.FlipHorizontal = !picture.FlipHorizontal;
+            }
+            else
+            {
+                picture.FlipVertical = !picture.FlipVertical;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Puts the selected picture back to its own size, one image pixel to a picture pixel.
+    ///
+    /// From its top-left corner, which is the one that stays put, and the canvas grows if the
+    /// picture now reaches past it, the same as when it is stretched by hand.
+    /// </summary>
+    public void RestorePictureSize()
+    {
+        if (Selected is not ImageAnnotation picture || snapshot.BitmapOf(picture.Source) is not { } bitmap)
+        {
+            return;
+        }
+
+        if (picture.Width == bitmap.PixelSize.Width && picture.Height == bitmap.PixelSize.Height)
+        {
+            return;
+        }
+
+        var before = BoundsOf(picture);
+
+        BeforeChange?.Invoke();
+
+        picture.Width = bitmap.PixelSize.Width;
+        picture.Height = bitmap.PixelSize.Height;
+        GrowCanvasAround(picture, before);
+
+        Changed?.Invoke();
+
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    /// <summary>
     /// Ends a picture drag and lets the layout have the picture back.
     ///
     /// From the release and from the loss of capture both, and harmless the second time, for the

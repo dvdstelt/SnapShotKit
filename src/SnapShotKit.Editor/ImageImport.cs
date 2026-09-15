@@ -89,10 +89,16 @@ public static class ImageImport
     /// named `.png` is common enough, and passing its bytes through unread would put a JPEG in an
     /// entry called `original.png`, where every reader afterwards would be entitled to be surprised.
     /// </summary>
-    static (byte[] Png, int Width, int Height) ToPng(string path)
-    {
-        var bytes = File.ReadAllBytes(path);
+    static (byte[] Png, int Width, int Height) ToPng(string path) => ToPng(File.ReadAllBytes(path));
 
+    /// <summary>
+    /// The same, for a picture that is already in memory, as one on the clipboard is.
+    ///
+    /// Throws when the bytes turn out not to be a picture ImageSharp can read, whatever they claimed
+    /// to be.
+    /// </summary>
+    public static (byte[] Png, int Width, int Height) ToPng(byte[] bytes)
+    {
         using var source = new MemoryStream(bytes);
         var info = Image.Identify(source);
 
