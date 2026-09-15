@@ -69,8 +69,9 @@ A `.ssk` file, for SnapShotKit snapshot, is a zip container in the manner of ODF
 
 ```
 snapshot-01.ssk  (zip)
-├── document.json     the canvas rectangle, the bands cut out, and the annotation objects
+├── document.json     the canvas rectangle, the bands cut out, and the layers: pictures and annotations
 ├── original.png      the capture as taken, never modified
+├── images/           pictures pasted in, each named after a hash of its bytes, never modified
 └── meta.json         when it was taken, the source screen size, the region within it
 ```
 
@@ -98,7 +99,7 @@ Reaching it is deliberately two ways round. **File ▸ Open image** is for someb
 
 It draws through the same renderer used for export, so what lands in the exported file is what was on screen. Two rendering paths would drift.
 
-Blur is done by keeping a blurred copy of the whole capture per radius in use. A blur region is then the corresponding patch of an already blurred image, which costs the same as drawing any other bitmap; the alternative is a gaussian blur on every repaint.
+Blur is done by keeping a blurred copy of a whole picture per radius in use. A blur region is then every picture beneath it drawn again from its blurred copy, placed and mirrored exactly as the picture is and clipped to the region, which costs the same as drawing any other bitmap; the alternative is a gaussian blur on every repaint. It is every picture beneath rather than the capture alone because the capture can be moved and others pasted beside it, and a blur has to hide whatever it is actually lying over.
 
 Annotations are drawn in the order they are in, and that order can be changed: forward, backward, to the front, to the back. An earlier version drew every blur first regardless of order, so that a blur could never hide an arrow, but a rule like that quietly overrides the choice the user is now able to make. The default is kept instead by where a new blur is filed rather than by how it is drawn, and documents written under the old rule are reordered as they are opened so they still look exactly as they did. That is what the format version is for.
 
@@ -134,11 +135,23 @@ Text can sit on a plate. No single ink colour is legible over a photograph or a 
 
 Annotations that are defined by a rectangle share a `RectAnnotation` base, so the canvas moves and resizes a blur or a box without knowing which it has. Ellipse, highlight and step numbers would all fit the same way.
 
+## Pictures on the canvas
+
+The capture is a layer. It used to be a backdrop painted before everything else, which made it the one thing on the canvas nothing could touch, and pasting a second picture beside it would then have given two kinds of picture that behaved differently. Now the capture and anything pasted are the same kind of layer: a rectangle saying where the picture stands and how large it is, which way round it faces, and the entry in the snapshot holding its pixels. The pixels are never touched, so a picture shrunk today can be put back to its actual size next week. A document from before this has its capture given a layer at the bottom of the stack, at the origin and at its own size, which is exactly where it was always drawn.
+
+Ctrl+V pastes the picture on the clipboard, read through wl-paste so a PNG arrives as the bytes that were offered. A file copied in the file manager is on the clipboard as a path rather than pixels, and pastes as the picture it names. A pasted picture is stored under `images/` named after a hash of its bytes, so the same picture pasted twice is kept once, and a save writes only the pictures some layer still uses. Every picture pasted in a session is kept in memory until the document closes, because undo holds layers rather than pixels and an undone delete has to find its picture again.
+
+Pictures are picked up with the select tool and only with it. With a drawing tool in hand the whole of the capture answering to a press would turn every arrow into a dragged screenshot. A corner keeps the proportions and shift lets it stretch; everything lands on whole pixels, because a picture placed between them is resampled and a resampled screenshot has soft text.
+
+**A picture pushed past the canvas takes the canvas with it.** Nothing pasted or dragged is quietly cropped. It happens as the picture moves, with the scale held and the picture kept still on screen the same way a canvas edge is dragged, so the part going out stays visible. The canvas grows only by how far the picture has gone past both the canvas and where the picture already was: nudging a picture the canvas was already cropping keeps the crop, because that crop was somebody's decision and moving the picture a few pixels is not a change of mind about it. Cropping is always available afterwards, which is why growing is the default rather than a question.
+
+Nothing else is positioned against a picture. Coordinates are measured from where the capture's corner was when it was taken, and they stay measured from there when the capture moves, so moving or resizing a picture leaves every arrow, text and blur exactly where it was drawn. That keeps moving a picture the same cheap, predictable operation as moving anything else, at a cost worth knowing: a blur laid over something private hides whatever is under it now, not what was under it when it was drawn.
+
 ## Resizing the canvas
 
 The canvas is the rectangle that gets exported, and it does not have to match the capture. Dragging an edge in crops the picture, dragging one out adds space that is transparent, and dragging the middle aims the canvas at the part worth keeping. Nothing touches `original.png`: a crop is geometry, so an edge pulled in can be pulled back out and the pixels are still there, which is the same promise the annotations get.
 
-Coordinates stay measured from the capture rather than from the canvas. That is what makes resizing cheap: every annotation is positioned against the picture it was drawn on, so moving the canvas moves nothing else, and cropping never rewrites a document to say where everything is now. Annotations that fall outside the canvas are clipped rather than deleted, on the editing canvas exactly as in the export.
+Coordinates stay measured from where the capture was taken rather than from the canvas. That is what makes resizing cheap: every annotation is positioned against the picture it was drawn on, so moving the canvas moves nothing else, and cropping never rewrites a document to say where everything is now. Annotations that fall outside the canvas are clipped rather than deleted, on the editing canvas exactly as in the export.
 
 **It is a mode, and while it lasts the editor shows more than the canvas.** This is the whole of the idea. A canvas clipped to itself gives no way to see what an edge is about to cut away, so the mode lays the picture out on a working surface covering both the canvas and the capture, and dims what falls outside the canvas rather than hiding it. What is being cropped stays on screen, greyed, until it is actually cropped.
 
