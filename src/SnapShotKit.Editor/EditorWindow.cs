@@ -704,51 +704,13 @@ public sealed class EditorWindow : Window
     }
 
     /// <summary>
-    /// Puts the canvas exactly around the pictures, undoing whatever crop or padding it had.
-    ///
-    /// The pictures rather than the capture, since the capture may have been moved and others
-    /// pasted beside it; with nothing pasted and nothing moved the two are the same rectangle.
+    /// Hands the canvas back to the pictures, undoing whatever crop, padding or size it was given.
     ///
     /// A proposal while the canvas is being resized, and an edit in its own right otherwise, since
-    /// the menu offers it whatever tool happens to be in hand.
+    /// the menu offers it whatever tool happens to be in hand. The view owns both, because it owns
+    /// what is being negotiated.
     /// </summary>
-    void FitCanvasToPictures()
-    {
-        if (snapshot is null || canvas is null)
-        {
-            return;
-        }
-
-        if (canvas.IsResizingCanvas)
-        {
-            canvas.ProposePictureBounds();
-            return;
-        }
-
-        var pictures = canvas.PicturesRect();
-        var area = snapshot.Document.Canvas;
-
-        var x = (int)Math.Floor(pictures.X);
-        var y = (int)Math.Floor(pictures.Y);
-        var width = (int)Math.Ceiling(pictures.Right) - x;
-        var height = (int)Math.Ceiling(pictures.Bottom) - y;
-
-        if (area.X == x && area.Y == y && area.Width == width && area.Height == height)
-        {
-            return;
-        }
-
-        Record();
-
-        area.X = x;
-        area.Y = y;
-        area.Width = width;
-        area.Height = height;
-
-        dirty = true;
-        canvas.CanvasResized();
-        UpdateChrome();
-    }
+    void FitCanvasToPictures() => canvas?.FitCanvasToPictures();
 
     /// <summary>
     /// Takes a ready-made look, for the next annotation drawn and for the selected one.
@@ -1057,8 +1019,11 @@ public sealed class EditorWindow : Window
         snapshot.Document.Layers.AddRange(previous.Layers);
 
         // The canvas and the cuts are part of the document too. Restoring only the layers would
-        // undo a crop by leaving the crop in place, and a cut by leaving the band cut out.
+        // undo a crop by leaving the crop in place, and a cut by leaving the band cut out. Whether
+        // the canvas was sized by hand goes with it, or undoing a resize would leave the canvas
+        // refusing to follow the pictures for a size nobody had set any more.
         snapshot.Document.Canvas = previous.Canvas;
+        snapshot.Document.ManualCanvas = previous.ManualCanvas;
         snapshot.Document.Cuts = previous.Cuts;
         snapshot.Recut();
 

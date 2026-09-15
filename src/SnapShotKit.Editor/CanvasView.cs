@@ -291,23 +291,23 @@ public sealed class CanvasView : Decorator
     double sessionScale;
 
     /// <summary>
-    /// Whether a picture is being dragged, and the canvas may be growing around it.
+    /// Whether a picture is being dragged, and the canvas may be changing size around it.
     ///
     /// Held apart from <see cref="dragging"/>, which says what the drag does to the picture, because
     /// this is about what it does to everything else: for as long as it lasts the scale is held and
     /// the window keeps the picture where it is on screen, the same way it does while an edge of
     /// the canvas is dragged.
     /// </summary>
-    bool growing;
+    bool fitting;
 
-    /// <summary>The canvas as it was when the picture was picked up, which is what it grows from.</summary>
-    Rect growFrom;
+    /// <summary>The canvas as it was when the picture was picked up, for saying how far its corner has since moved.</summary>
+    Rect fitFrom;
 
     /// <summary>
     /// The laid-out stretch the control was last arranged to show.
     ///
     /// A pointer position is measured against the control as it was last laid out, and while a
-    /// picture drags the canvas out the document is always one layout pass ahead of that. Mapped
+    /// picture drags the canvas about the document is always one layout pass ahead of that. Mapped
     /// through the canvas the document has now, a single movement lands a whole growth step away
     /// from where the pointer is, and the picture jumps.
     /// </summary>
@@ -461,6 +461,13 @@ public sealed class CanvasView : Decorator
 
         BeforeChange?.Invoke();
         snapshot.Document.Layers.Remove(Selected);
+
+        // A picture taken away can leave room the canvas no longer has any reason to keep.
+        if (Selected is ImageAnnotation)
+        {
+            Refit();
+        }
+
         Select(null);
         Changed?.Invoke();
     }
@@ -496,7 +503,7 @@ public sealed class CanvasView : Decorator
             // change of mind about it. Dropping the held value lets fitting be worked out afresh.
             // Not mid-drag, though: the whole point of holding it is that an edge being dragged
             // must not have the picture rescale under it.
-            if (canvasGrip == DragKind.None && !growing)
+            if (canvasGrip == DragKind.None && !fitting)
             {
                 sessionScale = 0;
             }
@@ -593,10 +600,10 @@ public sealed class CanvasView : Decorator
 
     /// <summary>
     /// The stretch the control's current bounds actually correspond to: the one it was last laid
-    /// out for while a picture is growing the canvas, and the one the document describes otherwise.
+    /// out for while a picture is resizing the canvas, and the one the document describes otherwise.
     /// See <see cref="arranged"/>.
     /// </summary>
-    Rect Shown() => growing && arranged.Width > 0 ? arranged : Area();
+    Rect Shown() => fitting && arranged.Width > 0 ? arranged : Area();
 
     /// <summary>The canvas in image pixels, as the document has it.</summary>
     Rect CanvasRect()
@@ -724,7 +731,7 @@ public sealed class CanvasView : Decorator
             dragBaseline = Selected!.Copy();
             grabOffset = image - AnchorOf(grip);
             e.Pointer.Capture(this);
-            BeginGrowing();
+            BeginPictureDrag();
             return;
         }
 
@@ -741,7 +748,7 @@ public sealed class CanvasView : Decorator
             dragBaseline = hit.Copy();
             grabOffset = default;
             e.Pointer.Capture(this);
-            BeginGrowing();
+            BeginPictureDrag();
             return;
         }
 
@@ -888,7 +895,7 @@ public sealed class CanvasView : Decorator
             // Shift lets a corner stretch a picture out of shape, which is the rarer thing to want.
             case ImageAnnotation picture when dragBaseline is ImageAnnotation baseline:
                 Apply(picture, baseline, delta, image, proportional: !e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-                GrowCanvasAround(picture, BoundsOf(baseline));
+                Refit();
                 break;
 
             case RectAnnotation rect when dragBaseline is RectAnnotation baseline:
@@ -1018,76 +1025,94 @@ public sealed class CanvasView : Decorator
 
     static Rect BoundsOf(RectAnnotation rect) => new(rect.X, rect.Y, rect.Width, rect.Height);
 
-    // ---- Growing the canvas around a picture ----------------------------------------------------
+    // ---- Fitting the canvas to the pictures ----------------------------------------------------
     //
-    // A picture moved or resized past the edge of the canvas takes the canvas with it, so nothing
-    // pasted or dragged is ever quietly cropped. The canvas only ever grows by what the picture has
-    // been pushed out past both the canvas and where the picture already was. A picture that was
-    // already cropped by the canvas stays cropped by the same amount when it is nudged: the crop was
-    // somebody's decision, and moving the picture a few pixels is not a change of mind about it.
+    // The canvas follows the pictures unless somebody has sized it by hand, and a hand-sized canvas
+    // is the least it will be. CanvasFit decides what that comes to; this is where it is asked,
+    // which is after anything that changes where a picture is or how large, and nowhere else. An
+    // arrow moved to the edge leaves the canvas alone, which keeps drawing near the edge from
+    // pushing it about.
     //
     // It happens as the picture moves rather than when it is let go, so the part being dragged out
     // is on screen the whole way. The scale is held and the window keeps the picture still while it
     // does, exactly as it does while an edge of the canvas is dragged, and for the same reason: a
-    // surface that refits as it grows would take the picture out from under the pointer moving it.
+    // surface that refits as it changes would take the picture out from under the pointer moving it.
 
     /// <summary>Starts a picture drag, if what is being dragged is a picture.</summary>
-    void BeginGrowing()
+    void BeginPictureDrag()
     {
         if (Selected is not ImageAnnotation)
         {
             return;
         }
 
-        growing = true;
-        growFrom = CanvasRect();
+        fitting = true;
+        fitFrom = CanvasRect();
         sessionScale = EffectiveScale;
 
         CanvasResizeStarted?.Invoke();
     }
 
-    /// <summary>
-    /// Grows the canvas to take in a picture that has gone past it.
-    ///
-    /// Worked out afresh from the canvas as it was when the picture was picked up, rather than from
-    /// the last step, so bringing the picture back in shrinks the canvas back to where it started
-    /// and no further. Outside a drag, as after a paste, it grows from the canvas as it is.
-    /// </summary>
-    /// <param name="before">Where the picture stood before, so a crop it already had is kept.</param>
-    void GrowCanvasAround(ImageAnnotation picture, Rect before)
+    /// <summary>Puts the canvas wherever the pictures and any size set by hand now say it belongs.</summary>
+    void Refit()
     {
-        var from = growing ? growFrom : CanvasRect();
-        var now = BoundsOf(picture);
+        var fitted = CanvasFit.For(snapshot.Document, snapshot.Bitmap.Size);
 
-        var grown = new Rect(
-            new Point(
-                Math.Floor(from.X - Math.Max(0, Math.Min(from.X, before.X) - now.X)),
-                Math.Floor(from.Y - Math.Max(0, Math.Min(from.Y, before.Y) - now.Y))),
-            new Point(
-                Math.Ceiling(from.Right + Math.Max(0, now.Right - Math.Max(from.Right, before.Right))),
-                Math.Ceiling(from.Bottom + Math.Max(0, now.Bottom - Math.Max(from.Bottom, before.Bottom)))));
-
-        if (grown == CanvasRect())
+        if (!CanvasFit.Apply(snapshot.Document, fitted))
         {
             return;
         }
 
-        var canvas = snapshot.Document.Canvas;
-        canvas.X = (int)grown.X;
-        canvas.Y = (int)grown.Y;
-        canvas.Width = (int)grown.Width;
-        canvas.Height = (int)grown.Height;
-
-        if (growing)
+        if (fitting)
         {
             // How far the canvas's corner has moved on screen, which is how far the window has to
             // move the control to leave the picture where it was.
-            var shift = snapshot.Layout.ToLaid(grown).TopLeft - snapshot.Layout.ToLaid(growFrom).TopLeft;
+            var shift = snapshot.Layout.ToLaid(fitted).TopLeft - snapshot.Layout.ToLaid(fitFrom).TopLeft;
             CanvasResizeMoved?.Invoke(shift * EffectiveScale);
         }
 
         InvalidateMeasure();
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Hands the canvas back to the pictures, forgetting any size it was given by hand, as one
+    /// undoable step. While a resize is open it is a proposal instead, like any other.
+    /// </summary>
+    public void FitCanvasToPictures()
+    {
+        if (resizing is not null)
+        {
+            Propose(PicturesRect(), fits: true);
+            return;
+        }
+
+        var document = snapshot.Document;
+        var fitted = CanvasFit.For(new SnapshotDocument { Layers = document.Layers }, snapshot.Bitmap.Size);
+
+        if (document.ManualCanvas is null && SameAsCanvas(fitted))
+        {
+            return;
+        }
+
+        BeforeChange?.Invoke();
+
+        document.ManualCanvas = null;
+        CanvasFit.Apply(document, fitted);
+
+        Changed?.Invoke();
+
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    /// <summary>Whether a rectangle is the canvas the document already has, to the whole pixel it is kept in.</summary>
+    bool SameAsCanvas(Rect rect)
+    {
+        var canvas = snapshot.Document.Canvas;
+
+        return canvas.X == (int)rect.X && canvas.Y == (int)rect.Y
+            && canvas.Width == (int)rect.Width && canvas.Height == (int)rect.Height;
     }
 
     /// <summary>
@@ -1120,9 +1145,7 @@ public sealed class CanvasView : Decorator
 
         snapshot.Document.Layers.Add(picture);
 
-        // Measured against the canvas as it stands, so the canvas simply grows to take in whatever
-        // of the picture it does not already cover.
-        GrowCanvasAround(picture, bounds);
+        Refit();
 
         Select(picture);
         Changed?.Invoke();
@@ -1160,8 +1183,8 @@ public sealed class CanvasView : Decorator
     /// <summary>
     /// Puts the selected picture back to its own size, one image pixel to a picture pixel.
     ///
-    /// From its top-left corner, which is the one that stays put, and the canvas grows if the
-    /// picture now reaches past it, the same as when it is stretched by hand.
+    /// From its top-left corner, which is the one that stays put, and the canvas follows it the same
+    /// as when it is stretched by hand.
     /// </summary>
     public void RestorePictureSize()
     {
@@ -1175,13 +1198,11 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        var before = BoundsOf(picture);
-
         BeforeChange?.Invoke();
 
         picture.Width = bitmap.PixelSize.Width;
         picture.Height = bitmap.PixelSize.Height;
-        GrowCanvasAround(picture, before);
+        Refit();
 
         Changed?.Invoke();
 
@@ -1195,14 +1216,14 @@ public sealed class CanvasView : Decorator
     /// From the release and from the loss of capture both, and harmless the second time, for the
     /// reason every drag here ends down both paths: letting go of the capture reports it lost.
     /// </summary>
-    void EndGrowing()
+    void EndPictureDrag()
     {
-        if (!growing)
+        if (!fitting)
         {
             return;
         }
 
-        growing = false;
+        fitting = false;
         sessionScale = 0;
 
         CanvasResizeEnded?.Invoke();
@@ -1246,6 +1267,14 @@ public sealed class CanvasView : Decorator
 
         /// <summary>The working surface on show: the proposal and the capture, with room around both.</summary>
         public Rect Frame;
+
+        /// <summary>
+        /// Whether the proposal is to fit the pictures, rather than a size of its own.
+        ///
+        /// Applying that hands the canvas back to the pictures. Applied as a size, the same
+        /// rectangle would pin the canvas there, and it would stop following them.
+        /// </summary>
+        public bool Fits;
     }
 
     /// <summary>Nothing smaller than this, in image pixels. A canvas of nothing is not a canvas.</summary>
@@ -1336,20 +1365,28 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        var canvas = snapshot.Document.Canvas;
+        var document = snapshot.Document;
         var proposed = session.Proposed;
 
-        var changed = canvas.X != (int)proposed.X || canvas.Y != (int)proposed.Y
-            || canvas.Width != (int)proposed.Width || canvas.Height != (int)proposed.Height;
+        // A canvas left where it was is not one sized by hand, however the proposal wandered on the
+        // way back to it; pressing Enter on it must not stop the canvas following the pictures.
+        var changed = session.Fits
+            ? document.ManualCanvas is not null || !SameAsCanvas(proposed)
+            : !SameAsCanvas(proposed);
 
         if (changed)
         {
             BeforeChange?.Invoke();
 
-            canvas.X = (int)proposed.X;
-            canvas.Y = (int)proposed.Y;
-            canvas.Width = (int)proposed.Width;
-            canvas.Height = (int)proposed.Height;
+            if (session.Fits)
+            {
+                document.ManualCanvas = null;
+                CanvasFit.Apply(document, CanvasFit.For(document, snapshot.Bitmap.Size));
+            }
+            else
+            {
+                CanvasFit.SetByHand(document, proposed);
+            }
         }
 
         CloseResize();
@@ -1411,16 +1448,7 @@ public sealed class CanvasView : Decorator
     /// <summary>The canvas being shown, as the file would come out: the cuts closed up.</summary>
     public Rect ShownCanvasLaid => snapshot.Layout.ToLaid(ShownCanvas);
 
-    /// <summary>Proposes exactly what the pictures cover, which is the way back from any crop or padding.</summary>
-    public void ProposePictureBounds()
-    {
-        if (resizing is not null)
-        {
-            Propose(PicturesRect());
-        }
-    }
-
-    void Propose(Rect proposed)
+    void Propose(Rect proposed, bool fits = false)
     {
         if (resizing is not { } session)
         {
@@ -1428,6 +1456,7 @@ public sealed class CanvasView : Decorator
         }
 
         session.Proposed = proposed;
+        session.Fits = fits;
 
         // The surface follows the canvas exactly, in both directions. Anything else leaves grey
         // where the canvas has been but no longer is, which says "something was cropped here" about
@@ -1552,7 +1581,7 @@ public sealed class CanvasView : Decorator
         }
 
         EndCanvasDrag();
-        EndGrowing();
+        EndPictureDrag();
         base.OnPointerCaptureLost(e);
     }
 
@@ -1921,7 +1950,7 @@ public sealed class CanvasView : Decorator
         }
 
         e.Pointer.Capture(null);
-        EndGrowing();
+        EndPictureDrag();
 
         // A click with a drawing tool leaves a zero-sized annotation behind, which would be
         // invisible and unselectable. Drop it rather than littering the document, and take back

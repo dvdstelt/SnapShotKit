@@ -249,7 +249,8 @@ public sealed class Snapshot : IDisposable
     ///
     /// Version 5 made the capture a layer. An older document drew it underneath everything at its
     /// own size and at the origin, so that is where its layer goes: the bottom of the stack, at the
-    /// origin, at its own size.
+    /// origin, at its own size. A canvas that was not exactly the capture had been sized by hand,
+    /// and is recorded as such.
     ///
     /// A document from further ahead than this build is left exactly as it is, version and all.
     /// There is nothing here that could repair one, and stamping it back down to this version would
@@ -275,6 +276,16 @@ public sealed class Snapshot : IDisposable
         if (document.Version < 5)
         {
             document.Layers.Insert(0, CaptureLayer(capture));
+
+            // Cropped or padded by hand, since before now the only canvas nobody had touched was
+            // the capture exactly. Left as it is, rather than snapping to the capture the first time
+            // anything on it moves.
+            var canvas = document.Canvas;
+
+            if (canvas.X != 0 || canvas.Y != 0 || canvas.Width != capture.Width || canvas.Height != capture.Height)
+            {
+                CanvasFit.SetByHand(document, new Avalonia.Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height));
+            }
         }
 
         document.Version = SnapshotDocument.Current;

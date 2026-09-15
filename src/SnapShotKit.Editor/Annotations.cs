@@ -369,6 +369,40 @@ public sealed class CanvasArea
     public int Height { get; set; }
 }
 
+/// <summary>
+/// A canvas somebody sized by hand, and where each picture stood when they did.
+///
+/// Its absence is the ordinary case, and means the canvas simply fits the pictures. See
+/// <see cref="CanvasFit"/> for what the two together decide.
+/// </summary>
+public sealed class ManualCanvas
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+
+    /// <summary>Each picture's rectangle at the moment the canvas was set, by the picture's id.</summary>
+    public Dictionary<string, PictureBounds> Pictures { get; set; } = [];
+
+    public ManualCanvas Copy() => new()
+    {
+        X = X, Y = Y, Width = Width, Height = Height,
+        Pictures = Pictures.ToDictionary(pair => pair.Key, pair => pair.Value.Copy())
+    };
+}
+
+/// <summary>Where a picture stood, in capture pixels.</summary>
+public sealed class PictureBounds
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+
+    public PictureBounds Copy() => new() { X = X, Y = Y, Width = Width, Height = Height };
+}
+
 /// <summary>The contents of document.json.</summary>
 public sealed class SnapshotDocument
 {
@@ -386,12 +420,20 @@ public sealed class SnapshotDocument
     /// Version 5 put the capture among the layers, so that it can be moved and resized like a
     /// picture pasted beside it. An older document is given one at the bottom of the stack, at its
     /// own size and at the origin, which is exactly where it was always drawn.
+    ///
+    /// Version 5 also records whether the canvas was sized by hand, since a canvas left alone now
+    /// follows the pictures. An older canvas that is not exactly the capture was cropped or padded
+    /// by somebody, and is migrated as set by hand so it stays exactly as they left it.
     /// </summary>
     public const int Current = 5;
 
     public int Version { get; set; } = Current;
 
+    /// <summary>The canvas as it stands, which is what gets exported.</summary>
     public CanvasArea Canvas { get; set; } = new();
+
+    /// <summary>The canvas as it was last sized by hand, or null when it has been left to fit the pictures.</summary>
+    public ManualCanvas? ManualCanvas { get; set; }
 
     public List<Annotation> Layers { get; set; } = [];
 
@@ -408,6 +450,7 @@ public sealed class SnapshotDocument
     {
         Version = Version,
         Canvas = new CanvasArea { X = Canvas.X, Y = Canvas.Y, Width = Canvas.Width, Height = Canvas.Height },
+        ManualCanvas = ManualCanvas?.Copy(),
         Layers = [.. Layers.Select(layer => layer.Copy())],
         Cuts = [.. Cuts.Select(cut => cut.Copy())]
     };
