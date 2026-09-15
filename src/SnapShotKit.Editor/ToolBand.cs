@@ -138,7 +138,7 @@ public sealed class ToolBand : Border
 
         canvasWidthGroup = Group("Width", widthBox);
         canvasHeightGroup = Group("Height", heightBox);
-        canvasFitGroup = Group("Canvas", TextAction("Fit to capture", () => CanvasFitRequested?.Invoke()));
+        canvasFitGroup = Group("Canvas", TextAction("Fit to pictures", () => CanvasFitRequested?.Invoke()));
 
 
 

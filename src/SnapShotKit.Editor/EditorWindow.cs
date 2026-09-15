@@ -458,7 +458,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Deselect", "Esc", () => canvas?.Select(null)),
             MenuEntry.Separator,
             MenuEntry.Item("Resize canvas", "C", () => SetTool(EditorTool.Canvas)),
-            MenuEntry.Item("Fit canvas to capture", null, FitCanvasToCapture),
+            MenuEntry.Item("Fit canvas to pictures", null, FitCanvasToPictures),
             MenuEntry.Separator,
             MenuEntry.Item("Cut out a band", "X", () => SetTool(EditorTool.Cut)),
             MenuEntry.Item("Put every cut back", null, () => canvas?.UncutAll()),
@@ -689,19 +689,22 @@ public sealed class EditorWindow : Window
         // dragging an edge does, and the resize is confirmed as a whole.
         band.CanvasWidthChosen += width => canvas?.ProposeCanvasSize(width, null);
         band.CanvasHeightChosen += height => canvas?.ProposeCanvasSize(null, height);
-        band.CanvasFitRequested += FitCanvasToCapture;
+        band.CanvasFitRequested += FitCanvasToPictures;
 
         band.ZoomStepped += direction => StepZoom(direction);
         band.ZoomFitRequested += () => SetZoom(null);
     }
 
     /// <summary>
-    /// Puts the canvas back around the capture exactly, undoing whatever crop or padding it had.
+    /// Puts the canvas exactly around the pictures, undoing whatever crop or padding it had.
+    ///
+    /// The pictures rather than the capture, since the capture may have been moved and others
+    /// pasted beside it; with nothing pasted and nothing moved the two are the same rectangle.
     ///
     /// A proposal while the canvas is being resized, and an edit in its own right otherwise, since
     /// the menu offers it whatever tool happens to be in hand.
     /// </summary>
-    void FitCanvasToCapture()
+    void FitCanvasToPictures()
     {
         if (snapshot is null || canvas is null)
         {
@@ -710,24 +713,29 @@ public sealed class EditorWindow : Window
 
         if (canvas.IsResizingCanvas)
         {
-            canvas.ProposeCaptureBounds();
+            canvas.ProposePictureBounds();
             return;
         }
 
-        var capture = snapshot.Bitmap.PixelSize;
+        var pictures = canvas.PicturesRect();
         var area = snapshot.Document.Canvas;
 
-        if (area is { X: 0, Y: 0 } && area.Width == capture.Width && area.Height == capture.Height)
+        var x = (int)Math.Floor(pictures.X);
+        var y = (int)Math.Floor(pictures.Y);
+        var width = (int)Math.Ceiling(pictures.Right) - x;
+        var height = (int)Math.Ceiling(pictures.Bottom) - y;
+
+        if (area.X == x && area.Y == y && area.Width == width && area.Height == height)
         {
             return;
         }
 
         Record();
 
-        area.X = 0;
-        area.Y = 0;
-        area.Width = capture.Width;
-        area.Height = capture.Height;
+        area.X = x;
+        area.Y = y;
+        area.Width = width;
+        area.Height = height;
 
         dirty = true;
         canvas.CanvasResized();
@@ -1486,16 +1494,18 @@ public sealed class EditorWindow : Window
             BlurAnnotation => "blur selected",
             TextAnnotation => "text selected",
             StepAnnotation => "marker selected",
+            ImageAnnotation { IsCapture: true } => "capture selected",
+            ImageAnnotation => "picture selected",
             _ => "nothing selected"
         };
 
         // What the file would come out as, which is the canvas with its cuts closed up. The
-        // capture's own size is worth saying only once that has stopped matching it, which is
-        // exactly when "1920 × 1080" on its own would be ambiguous.
+        // capture's own size is worth saying only once the canvas has stopped fitting the
+        // pictures, which is exactly when "1920 × 1080" on its own would be ambiguous.
         var capture = snapshot.Bitmap.PixelSize;
         var laid = snapshot.Layout.ToLaid(size);
 
-        var dimensions = laid == new Rect(0, 0, capture.Width, capture.Height)
+        var dimensions = laid == snapshot.Layout.ToLaid(canvas.PicturesRect())
             ? $"{laid.Width} × {laid.Height}"
             : $"{laid.Width} × {laid.Height} canvas on a {capture.Width} × {capture.Height} capture";
 

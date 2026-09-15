@@ -290,6 +290,29 @@ public sealed class CanvasView : Decorator
     /// </summary>
     double sessionScale;
 
+    /// <summary>
+    /// Whether a picture is being dragged, and the canvas may be growing around it.
+    ///
+    /// Held apart from <see cref="dragging"/>, which says what the drag does to the picture, because
+    /// this is about what it does to everything else: for as long as it lasts the scale is held and
+    /// the window keeps the picture where it is on screen, the same way it does while an edge of
+    /// the canvas is dragged.
+    /// </summary>
+    bool growing;
+
+    /// <summary>The canvas as it was when the picture was picked up, which is what it grows from.</summary>
+    Rect growFrom;
+
+    /// <summary>
+    /// The laid-out stretch the control was last arranged to show.
+    ///
+    /// A pointer position is measured against the control as it was last laid out, and while a
+    /// picture drags the canvas out the document is always one layout pass ahead of that. Mapped
+    /// through the canvas the document has now, a single movement lands a whole growth step away
+    /// from where the pointer is, and the picture jumps.
+    /// </summary>
+    Rect arranged;
+
     public CanvasView(Snapshot snapshot, BlurCache blurs)
     {
         this.snapshot = snapshot;
@@ -473,7 +496,7 @@ public sealed class CanvasView : Decorator
             // change of mind about it. Dropping the held value lets fitting be worked out afresh.
             // Not mid-drag, though: the whole point of holding it is that an edge being dragged
             // must not have the picture rescale under it.
-            if (canvasGrip == DragKind.None)
+            if (canvasGrip == DragKind.None && !growing)
             {
                 sessionScale = 0;
             }
@@ -549,6 +572,8 @@ public sealed class CanvasView : Decorator
         // The editing layer covers the whole picture; the editor inside it is placed by coordinate.
         Child?.Arrange(new Rect(finalSize));
 
+        arranged = Area();
+
         return finalSize;
     }
 
@@ -564,7 +589,14 @@ public sealed class CanvasView : Decorator
     /// </summary>
     Rect Area() => snapshot.Layout.ToLaid(resizing?.Frame ?? CanvasRect());
 
-    double Scale => Area().Width <= 0 ? 1 : Bounds.Width / Area().Width;
+    double Scale => Shown().Width <= 0 ? 1 : Bounds.Width / Shown().Width;
+
+    /// <summary>
+    /// The stretch the control's current bounds actually correspond to: the one it was last laid
+    /// out for while a picture is growing the canvas, and the one the document describes otherwise.
+    /// See <see cref="arranged"/>.
+    /// </summary>
+    Rect Shown() => growing && arranged.Width > 0 ? arranged : Area();
 
     /// <summary>The canvas in image pixels, as the document has it.</summary>
     Rect CanvasRect()
@@ -573,8 +605,18 @@ public sealed class CanvasView : Decorator
         return new Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height);
     }
 
-    /// <summary>The capture in image pixels, which by definition starts at the origin.</summary>
-    Rect CaptureRect() => new(0, 0, snapshot.Bitmap.PixelSize.Width, snapshot.Bitmap.PixelSize.Height);
+    /// <summary>
+    /// Everything the pictures cover, in image pixels, or the capture where it was taken when there
+    /// are no pictures left at all.
+    ///
+    /// What "fit" means for the canvas. It used to be the capture, and once a picture can be pasted
+    /// beside it or the capture moved, the capture alone would crop whatever was put next to it.
+    /// </summary>
+    public Rect PicturesRect() => snapshot.Document.Layers
+        .OfType<ImageAnnotation>()
+        .Select(picture => new Rect(picture.X, picture.Y, picture.Width, picture.Height))
+        .Aggregate((Rect?)null, (union, next) => union?.Union(next) ?? next)
+        ?? new Rect(0, 0, snapshot.Bitmap.PixelSize.Width, snapshot.Bitmap.PixelSize.Height);
 
     /// <summary>
     /// Where the capture's top-left corner falls on the control.
@@ -583,7 +625,7 @@ public sealed class CanvasView : Decorator
     /// zero of everything drawn on the picture. Taken from the renderer so the two cannot disagree:
     /// if they did, every click would land somewhere other than where it looks.
     /// </summary>
-    Point Origin() => SnapshotRenderer.Origin(Area(), Target(), Scale);
+    Point Origin() => SnapshotRenderer.Origin(Shown(), Target(), Scale);
 
     /// <summary>Where a point on this control falls on the picture, in image pixels.</summary>
     public Point ToImagePoint(Point view) => ToImage(view);
@@ -682,6 +724,7 @@ public sealed class CanvasView : Decorator
             dragBaseline = Selected!.Copy();
             grabOffset = image - AnchorOf(grip);
             e.Pointer.Capture(this);
+            BeginGrowing();
             return;
         }
 
@@ -698,6 +741,7 @@ public sealed class CanvasView : Decorator
             dragBaseline = hit.Copy();
             grabOffset = default;
             e.Pointer.Capture(this);
+            BeginGrowing();
             return;
         }
 
@@ -841,6 +885,12 @@ public sealed class CanvasView : Decorator
                 Apply(arrow, baseline, delta, image);
                 break;
 
+            // Shift lets a corner stretch a picture out of shape, which is the rarer thing to want.
+            case ImageAnnotation picture when dragBaseline is ImageAnnotation baseline:
+                Apply(picture, baseline, delta, image, proportional: !e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+                GrowCanvasAround(picture, BoundsOf(baseline));
+                break;
+
             case RectAnnotation rect when dragBaseline is RectAnnotation baseline:
                 Apply(rect, baseline, delta, image);
                 break;
@@ -907,6 +957,159 @@ public sealed class CanvasView : Decorator
         rect.Y = Math.Min(top, bottom);
         rect.Width = Math.Abs(right - left);
         rect.Height = Math.Abs(bottom - top);
+    }
+
+    /// <summary>Nothing narrower or shorter than this. A picture of no width is one that can never be picked up again.</summary>
+    const double MinimumPicture = 4;
+
+    /// <summary>
+    /// Moves or resizes a picture, on whole pixels.
+    ///
+    /// Whole pixels because a picture placed between them is resampled, and a screenshot resampled
+    /// by half a pixel is a screenshot with soft text, on the canvas and in the export alike.
+    ///
+    /// A corner keeps the picture's proportions unless told otherwise, and grows it from the corner
+    /// opposite. A side stretches it, since a side can only ever say one dimension, and a picture
+    /// dragged through itself turns inside out the way a box does rather than stopping.
+    /// </summary>
+    void Apply(ImageAnnotation picture, ImageAnnotation baseline, Vector delta, Point image, bool proportional)
+    {
+        if (dragging == DragKind.Move)
+        {
+            picture.X = baseline.X + Math.Round(delta.X);
+            picture.Y = baseline.Y + Math.Round(delta.Y);
+            return;
+        }
+
+        var x = Math.Round(image.X);
+        var y = Math.Round(image.Y);
+
+        var left = MovesLeft(dragging) ? x : baseline.X;
+        var top = MovesTop(dragging) ? y : baseline.Y;
+        var right = MovesRight(dragging) ? x : baseline.X + baseline.Width;
+        var bottom = MovesBottom(dragging) ? y : baseline.Y + baseline.Height;
+
+        var corner = (MovesLeft(dragging) || MovesRight(dragging)) && (MovesTop(dragging) || MovesBottom(dragging));
+
+        if (proportional && corner && baseline.Width > 0 && baseline.Height > 0)
+        {
+            // The corner that stays put, and however far the pointer has gone from it in whichever
+            // direction has gone further. Measuring by the larger keeps the picture under the
+            // pointer rather than letting one axis lag behind it.
+            var anchorX = MovesLeft(dragging) ? baseline.X + baseline.Width : baseline.X;
+            var anchorY = MovesTop(dragging) ? baseline.Y + baseline.Height : baseline.Y;
+
+            var factor = Math.Max(Math.Abs(x - anchorX) / baseline.Width, Math.Abs(y - anchorY) / baseline.Height);
+
+            var width = Math.Max(Math.Round(baseline.Width * factor), MinimumPicture);
+            var height = Math.Max(Math.Round(baseline.Height * factor), MinimumPicture);
+
+            left = x < anchorX ? anchorX - width : anchorX;
+            right = left + width;
+            top = y < anchorY ? anchorY - height : anchorY;
+            bottom = top + height;
+        }
+
+        picture.X = Math.Min(left, right);
+        picture.Y = Math.Min(top, bottom);
+        picture.Width = Math.Max(Math.Abs(right - left), MinimumPicture);
+        picture.Height = Math.Max(Math.Abs(bottom - top), MinimumPicture);
+    }
+
+    static Rect BoundsOf(RectAnnotation rect) => new(rect.X, rect.Y, rect.Width, rect.Height);
+
+    // ---- Growing the canvas around a picture ----------------------------------------------------
+    //
+    // A picture moved or resized past the edge of the canvas takes the canvas with it, so nothing
+    // pasted or dragged is ever quietly cropped. The canvas only ever grows by what the picture has
+    // been pushed out past both the canvas and where the picture already was. A picture that was
+    // already cropped by the canvas stays cropped by the same amount when it is nudged: the crop was
+    // somebody's decision, and moving the picture a few pixels is not a change of mind about it.
+    //
+    // It happens as the picture moves rather than when it is let go, so the part being dragged out
+    // is on screen the whole way. The scale is held and the window keeps the picture still while it
+    // does, exactly as it does while an edge of the canvas is dragged, and for the same reason: a
+    // surface that refits as it grows would take the picture out from under the pointer moving it.
+
+    /// <summary>Starts a picture drag, if what is being dragged is a picture.</summary>
+    void BeginGrowing()
+    {
+        if (Selected is not ImageAnnotation)
+        {
+            return;
+        }
+
+        growing = true;
+        growFrom = CanvasRect();
+        sessionScale = EffectiveScale;
+
+        CanvasResizeStarted?.Invoke();
+    }
+
+    /// <summary>
+    /// Grows the canvas to take in a picture that has gone past it.
+    ///
+    /// Worked out afresh from the canvas as it was when the picture was picked up, rather than from
+    /// the last step, so bringing the picture back in shrinks the canvas back to where it started
+    /// and no further. Outside a drag, as after a paste, it grows from the canvas as it is.
+    /// </summary>
+    /// <param name="before">Where the picture stood before, so a crop it already had is kept.</param>
+    void GrowCanvasAround(ImageAnnotation picture, Rect before)
+    {
+        var from = growing ? growFrom : CanvasRect();
+        var now = BoundsOf(picture);
+
+        var grown = new Rect(
+            new Point(
+                Math.Floor(from.X - Math.Max(0, Math.Min(from.X, before.X) - now.X)),
+                Math.Floor(from.Y - Math.Max(0, Math.Min(from.Y, before.Y) - now.Y))),
+            new Point(
+                Math.Ceiling(from.Right + Math.Max(0, now.Right - Math.Max(from.Right, before.Right))),
+                Math.Ceiling(from.Bottom + Math.Max(0, now.Bottom - Math.Max(from.Bottom, before.Bottom)))));
+
+        if (grown == CanvasRect())
+        {
+            return;
+        }
+
+        var canvas = snapshot.Document.Canvas;
+        canvas.X = (int)grown.X;
+        canvas.Y = (int)grown.Y;
+        canvas.Width = (int)grown.Width;
+        canvas.Height = (int)grown.Height;
+
+        if (growing)
+        {
+            // How far the canvas's corner has moved on screen, which is how far the window has to
+            // move the control to leave the picture where it was.
+            var shift = snapshot.Layout.ToLaid(grown).TopLeft - snapshot.Layout.ToLaid(growFrom).TopLeft;
+            CanvasResizeMoved?.Invoke(shift * EffectiveScale);
+        }
+
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Ends a picture drag and lets the layout have the picture back.
+    ///
+    /// From the release and from the loss of capture both, and harmless the second time, for the
+    /// reason every drag here ends down both paths: letting go of the capture reports it lost.
+    /// </summary>
+    void EndGrowing()
+    {
+        if (!growing)
+        {
+            return;
+        }
+
+        growing = false;
+        sessionScale = 0;
+
+        CanvasResizeEnded?.Invoke();
+
+        InvalidateMeasure();
+        InvalidateVisual();
     }
 
     // Which edges a grip moves. Shared with the canvas, which is dragged by the same eight grips
@@ -989,7 +1192,7 @@ public sealed class CanvasView : Decorator
         }
 
         session.Proposed = CanvasRect();
-        session.Frame = FrameAround(session.Proposed, CaptureRect());
+        session.Frame = FrameAround(session.Proposed, PicturesRect());
 
         // Left for the next measure to work out, since it depends on the room available.
         sessionScale = 0;
@@ -1001,7 +1204,7 @@ public sealed class CanvasView : Decorator
     }
 
     /// <summary>
-    /// The working surface for a proposal: everything it and the capture cover, and nothing more.
+    /// The working surface for a proposal: everything it and the pictures cover, and nothing more.
     ///
     /// No room is kept back around the pair. Opening the mode would otherwise shrink the picture to
     /// make space that is not needed yet, which reads as the editor having done something when all
@@ -1109,12 +1312,12 @@ public sealed class CanvasView : Decorator
     /// <summary>The canvas being shown, as the file would come out: the cuts closed up.</summary>
     public Rect ShownCanvasLaid => snapshot.Layout.ToLaid(ShownCanvas);
 
-    /// <summary>Proposes the capture exactly, which is the way back from any crop or padding.</summary>
-    public void ProposeCaptureBounds()
+    /// <summary>Proposes exactly what the pictures cover, which is the way back from any crop or padding.</summary>
+    public void ProposePictureBounds()
     {
         if (resizing is not null)
         {
-            Propose(CaptureRect());
+            Propose(PicturesRect());
         }
     }
 
@@ -1131,7 +1334,7 @@ public sealed class CanvasView : Decorator
         // where the canvas has been but no longer is, which says "something was cropped here" about
         // a place where nothing was. The picture still does not move: the window holds it where it
         // is for the length of the drag, whichever way the surface is going.
-        session.Frame = FrameAround(proposed, CaptureRect());
+        session.Frame = FrameAround(proposed, PicturesRect());
 
         CanvasProposalChanged?.Invoke();
 
@@ -1250,6 +1453,7 @@ public sealed class CanvasView : Decorator
         }
 
         EndCanvasDrag();
+        EndGrowing();
         base.OnPointerCaptureLost(e);
     }
 
@@ -1508,9 +1712,6 @@ public sealed class CanvasView : Decorator
         _ => StandardCursorType.Arrow
     };
 
-    /// <summary>Whether a canvas reaches past the capture on any side, and so has transparency to show.</summary>
-    bool ReachesPastCapture(Rect canvas) => !CaptureRect().Contains(canvas);
-
     static IBrush BuildChequerboard()
     {
         const double tile = 2 * ChequerCell;
@@ -1621,6 +1822,7 @@ public sealed class CanvasView : Decorator
         }
 
         e.Pointer.Capture(null);
+        EndGrowing();
 
         // A click with a drawing tool leaves a zero-sized annotation behind, which would be
         // invisible and unselectable. Drop it rather than littering the document, and take back
@@ -1671,8 +1873,10 @@ public sealed class CanvasView : Decorator
 
             var hit = annotation switch
             {
-                // Pictures are the ground everything else is drawn on, and are not picked up here.
-                ImageAnnotation => false,
+                // Pictures are picked up only with the select tool. They are the ground everything
+                // else is drawn on, and the whole of the capture answering to a press would leave
+                // every drawing tool moving the screenshot instead of drawing on it.
+                ImageAnnotation picture => Tool == EditorTool.Select && BoundsOf(picture).Contains(image),
 
                 // A box without a fill is a border around something the user still wants to work
                 // on. Treating its whole interior as the box would make everything inside it
@@ -1812,14 +2016,13 @@ public sealed class CanvasView : Decorator
 
         var shown = ShownCanvas;
 
-        // A chequerboard wherever the canvas reaches past the capture, which is the only backdrop
-        // this control has: everywhere else the picture covers it, and the mat around it belongs to
-        // the window. Editing chrome, like the outlines below it: an export paints nothing there,
-        // which is what makes the transparency real rather than drawn.
-        if (ReachesPastCapture(shown))
-        {
-            context.FillRectangle(Chequerboard, ViewRect(shown));
-        }
+        // A chequerboard under the whole canvas, which is the only backdrop this control has:
+        // wherever a picture stands it is covered, and the mat around it belongs to the window.
+        // Laid under all of it rather than worked out around the pictures, which can be moved,
+        // mirrored and have transparent corners of their own. Editing chrome, like the outlines
+        // below it: an export paints nothing there, which is what makes the transparency real
+        // rather than drawn.
+        context.FillRectangle(Chequerboard, ViewRect(shown));
 
         SnapshotRenderer.Draw(context, snapshot, blurs, target, Area(), editing);
 
