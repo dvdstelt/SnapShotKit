@@ -81,6 +81,13 @@ public sealed class ToolBand : Border
 
     readonly TextBlock zoomLabel = Labels.Body("100%", 12.5, Tokens.Neutral800Brush);
 
+    readonly TextBlock canvasSizeLabel = Labels.Body(string.Empty, 12.5, Tokens.Neutral800Brush);
+    readonly TextBlock canvasFixedLabel = Labels.Body("fixed", 10.5, Tokens.Neutral500Brush);
+    readonly Control canvasIcon = Lucide.Icon(Lucide.Crop, 14, Tokens.Neutral800Brush);
+    readonly Border canvasReadout;
+
+    const string CanvasTip = "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out.";
+
     public ToolBand(EditorState state)
     {
         Background = Tokens.BgBrush;
@@ -218,8 +225,19 @@ public sealed class ToolBand : Border
 
         right.Children.Add(TextAction("Undo", () => UndoRequested?.Invoke()));
         right.Children.Add(TextAction("Redo", () => RedoRequested?.Invoke()));
-        right.Children.Add(Rule());
-        right.Children.Add(BuildZoom());
+
+        canvasReadout = BuildCanvasReadout();
+
+        // Built here, since they are wired to the same events, but shown along the foot of the
+        // window. How large the picture is and how large it is being shown are about the view rather
+        // than about drawing, and the band's width is what the busiest tool's settings run out of.
+        ViewControls = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = Tokens.Space.S3,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { canvasReadout, BuildZoom() }
+        };
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(Tokens.Space.S4, 0) };
         Grid.SetColumn(left, 0);
@@ -229,6 +247,9 @@ public sealed class ToolBand : Border
 
         Child = grid;
     }
+
+    /// <summary>The canvas size and the zoom, for the window to put along its foot. See the constructor.</summary>
+    public Control ViewControls { get; }
 
     public event Action<EditorTool>? ToolChosen;
     public event Action<string>? ColourChosen;
@@ -257,6 +278,9 @@ public sealed class ToolBand : Border
     public event Action<int>? CanvasHeightChosen;
     public event Action? CanvasFitRequested;
 
+    /// <summary>The canvas size was clicked: open a resize, or back out of the one that is open.</summary>
+    public event Action? CanvasResizeRequested;
+
     /// <summary>Mirror the selected picture: true left to right, false top to bottom.</summary>
     public event Action<bool>? PictureFlipRequested;
 
@@ -278,7 +302,6 @@ public sealed class ToolBand : Border
                      (EditorTool.Blur, Lucide.Blur, "Blur", "Blur  (L)"),
                      (EditorTool.Step, Lucide.Step, "Marker", "Numbered marker  (N)\nEach one takes the next number up."),
                      (EditorTool.Text, Lucide.Text, "Text", "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
-                     (EditorTool.Canvas, Lucide.Crop, "Canvas", "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out."),
                      (EditorTool.Cut, Lucide.Cut, "Cut", "Cut out  (X)\nDrag down the picture to take a band of rows out of it, or across to take columns.\nWhat is left closes up.")
                  })
         {
@@ -466,6 +489,74 @@ public sealed class ToolBand : Border
             CornerRadius = Tokens.Radius,
             VerticalAlignment = VerticalAlignment.Center
         };
+    }
+
+    /// <summary>
+    /// The canvas size, which is also the way into resizing it.
+    ///
+    /// Beside the zoom along the foot of the window rather than among the tools. Resizing the canvas
+    /// draws nothing: it changes the document rather than what stands on it, and in a row of drawing
+    /// tools it was the one that was not one. Here it says how large the picture will come out
+    /// whenever anybody looks, which is worth the space on its own, and it is where Snagit puts the
+    /// same thing.
+    /// </summary>
+    Border BuildCanvasReadout()
+    {
+        canvasSizeLabel.VerticalAlignment = VerticalAlignment.Center;
+        canvasFixedLabel.VerticalAlignment = VerticalAlignment.Center;
+        canvasFixedLabel.IsVisible = false;
+
+        var cell = new Border
+        {
+            Height = 28,
+            Padding = new Thickness(Tokens.Space.S2, 0),
+            Background = Tokens.BgBrush,
+            BorderBrush = Tokens.DividerBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = Tokens.Radius,
+            VerticalAlignment = VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = Tokens.Space.S2,
+                Children = { canvasIcon, canvasSizeLabel, canvasFixedLabel }
+            }
+        };
+
+        ToolTip.SetTip(cell, CanvasTip);
+
+        cell.PointerPressed += (_, _) => CanvasResizeRequested?.Invoke();
+        cell.PointerEntered += (_, _) => { if (Active != EditorTool.Canvas) cell.Background = Tokens.Neutral200Brush; };
+        cell.PointerExited += (_, _) => { if (Active != EditorTool.Canvas) cell.Background = Tokens.BgBrush; };
+
+        return cell;
+    }
+
+    /// <summary>
+    /// Points the canvas readout at the canvas as the file would come out.
+    ///
+    /// "fixed" when the size was set by hand, which is the one thing about the canvas that cannot be
+    /// seen by looking at it: a canvas that has stopped shrinking to fit the pictures looks the same
+    /// as one that never needed to, and the difference is worth being able to find without guessing.
+    /// </summary>
+    public void ShowCanvas(int width, int height, bool setByHand, bool resizing)
+    {
+        canvasSizeLabel.Text = $"{width} × {height}";
+        canvasFixedLabel.IsVisible = setByHand;
+
+        canvasReadout.Background = resizing ? Tokens.AccentBrush : Tokens.BgBrush;
+        canvasSizeLabel.Foreground = resizing ? Tokens.BgBrush : Tokens.Neutral800Brush;
+        canvasFixedLabel.Foreground = resizing ? Tokens.BgBrush : Tokens.Neutral500Brush;
+
+        if (canvasIcon is Viewbox { Child: Avalonia.Controls.Shapes.Path path })
+        {
+            path.Stroke = resizing ? Tokens.BgBrush : Tokens.Neutral800Brush;
+        }
+
+        ToolTip.SetTip(canvasReadout, setByHand
+            ? CanvasTip + "\n\nThis size was set by hand, so the canvas stays at least this large.\nFit to pictures lets it follow them again."
+            : CanvasTip);
     }
 
     /// <summary>One segment of the zoom control, ruled off from the one before it.</summary>

@@ -132,9 +132,10 @@ public sealed class EditorWindow : Window
 
         Title = opened is null ? "SnapShotKit" : $"SnapShotKit - {Path.GetFileName(opened.Path)}";
 
-        // Wide enough for the band's busiest tool. A window that opens too narrow for its own
-        // chrome starts by hiding a control the user has not been shown yet.
-        Width = 1320;
+        // Wide enough for the band's busiest tool, which is text with a plate or a filled box. A
+        // window that opens too narrow for its own chrome starts by hiding a control the user has
+        // not been shown yet.
+        Width = 1440;
         Height = 760;
         Background = Tokens.BgBrush;
 
@@ -220,7 +221,7 @@ public sealed class EditorWindow : Window
             BorderBrush = Tokens.DividerBrush,
             BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(Tokens.Space.S6, Tokens.Space.S1),
-            Child = status
+            Child = Footer()
         };
 
         DockPanel.SetDock(footer, Dock.Bottom);
@@ -246,6 +247,20 @@ public sealed class EditorWindow : Window
         SetTool(EditorTool.Arrow);
         RefreshRecent();
         UpdateChrome();
+    }
+
+    /// <summary>The status line along the foot of the window, with the canvas size and the zoom at its right.</summary>
+    Control Footer()
+    {
+        var row = new DockPanel();
+
+        DockPanel.SetDock(band.ViewControls, Dock.Right);
+        row.Children.Add(band.ViewControls);
+
+        status.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(status);
+
+        return row;
     }
 
     static Control NothingOnTheMat()
@@ -297,6 +312,7 @@ public sealed class EditorWindow : Window
         // The drawing tools are about a capture, and there is none. The menus thin out on their
         // own, since their entries are built afresh each time they are opened.
         band.IsVisible = false;
+        band.ViewControls.IsVisible = false;
         confirmBar.IsVisible = false;
 
         // Back to the state fitting leaves the mat in. A scroller that can scroll offers whatever
@@ -710,6 +726,25 @@ public sealed class EditorWindow : Window
         band.CanvasWidthChosen += width => canvas?.ProposeCanvasSize(width, null);
         band.CanvasHeightChosen += height => canvas?.ProposeCanvasSize(null, height);
         band.CanvasFitRequested += FitCanvasToPictures;
+
+        // The readout opens a resize, and a second click on it backs out of one, the same as
+        // clicking an active tool would if tools could be let go of.
+        band.CanvasResizeRequested += () =>
+        {
+            if (canvas is null)
+            {
+                return;
+            }
+
+            if (canvas.IsResizingCanvas)
+            {
+                canvas.CancelCanvasResize();
+            }
+            else
+            {
+                SetTool(EditorTool.Canvas);
+            }
+        };
 
         band.PictureFlipRequested += horizontally => canvas?.Flip(horizontally);
         band.PictureSizeRestoreRequested += () => canvas?.RestorePictureSize();
@@ -1520,6 +1555,7 @@ public sealed class EditorWindow : Window
         WireCanvas();
         framedCanvas = ShowCanvas();
         band.IsVisible = true;
+        band.ViewControls.IsVisible = true;
 
         // Both hold full-resolution bitmaps in native memory the collector cannot see, so leaving
         // them to finalisers would let every click in the strip stack another capture in memory.
@@ -1572,6 +1608,8 @@ public sealed class EditorWindow : Window
         // the readouts follow what is on screen, which is what the user is working on.
         var size = canvas.ShownCanvas;
         band.ShowCanvasSize((int)canvas.ShownCanvasLaid.Width, (int)canvas.ShownCanvasLaid.Height);
+        band.ShowCanvas((int)canvas.ShownCanvasLaid.Width, (int)canvas.ShownCanvasLaid.Height,
+            snapshot.Document.ManualCanvas is not null, canvas.IsResizingCanvas);
 
         var selection = canvas.Selected switch
         {
