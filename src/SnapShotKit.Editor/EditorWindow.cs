@@ -112,18 +112,25 @@ public sealed class EditorWindow : Window
     string? openedNote;
 
     /// <param name="opened">
-    /// Named for what it is rather than after the field it fills. The field can now hold nothing,
-    /// and a parameter of the same name would shadow it here: anything deferred from this
-    /// constructor would read the capture the window opened with for as long as the window lived,
-    /// long after it had been closed and disposed.
+    /// The snapshot to open, or null for an editor with nothing on the canvas, which is what the
+    /// panel menu and the application launcher open: the recent captures along the bottom and a
+    /// clipboard to paste from are a better place to start than a library window in the way.
+    ///
+    /// Named for what it is rather than after the field it fills. The field can hold nothing, and a
+    /// parameter of the same name would shadow it here: anything deferred from this constructor
+    /// would read the capture the window opened with for as long as the window lived, long after it
+    /// had been closed and disposed.
     /// </param>
-    public EditorWindow(Snapshot opened)
+    public EditorWindow(Snapshot? opened)
     {
-        snapshot = opened;
-        blurs = new BlurCache(opened);
-        canvas = new CanvasView(opened, blurs);
+        if (opened is not null)
+        {
+            snapshot = opened;
+            blurs = new BlurCache(opened);
+            canvas = new CanvasView(opened, blurs);
+        }
 
-        Title = $"SnapShotKit - {Path.GetFileName(opened.Path)}";
+        Title = opened is null ? "SnapShotKit" : $"SnapShotKit - {Path.GetFileName(opened.Path)}";
 
         // Wide enough for the band's busiest tool. A window that opens too narrow for its own
         // chrome starts by hiding a control the user has not been shown yet.
@@ -168,8 +175,8 @@ public sealed class EditorWindow : Window
                 {
                     // Quiet answer first and the decisive one last, which is the order every other
                     // question in this application is asked in.
-                    Buttons.Secondary("Cancel", null, () => canvas.CancelCanvasResize()),
-                    Buttons.Primary("Apply", null, () => canvas.ApplyCanvasResize())
+                    Buttons.Secondary("Cancel", null, () => canvas?.CancelCanvasResize()),
+                    Buttons.Primary("Apply", null, () => canvas?.ApplyCanvasResize())
                 }
             }
         };
@@ -188,8 +195,16 @@ public sealed class EditorWindow : Window
             Child = matLayer
         };
 
-        framedCanvas = ShowCanvas();
-        SetZoom(null);
+        if (opened is null)
+        {
+            // The same state deleting the capture on the canvas leaves, and put there the same way.
+            CloseDocument();
+        }
+        else
+        {
+            framedCanvas = ShowCanvas();
+            SetZoom(null);
+        }
 
         var layout = new DockPanel();
 

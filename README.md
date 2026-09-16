@@ -49,7 +49,8 @@ Both halves also stand on their own:
 ```bash
 snapshotkit capture              # capture, and choose a region
 snapshotkit capture --after 5    # wait first, for menus that close on a keypress
-snapshotkit-editor               # the library
+snapshotkit-editor               # the editor, with nothing open
+snapshotkit-editor --library     # the library
 snapshotkit-editor shot.ssk      # one snapshot
 snapshotkit-editor diagram.png   # any image, brought in as a snapshot
 ```

@@ -74,7 +74,7 @@ Set `SNAPSHOTKIT_TRACE=1` on any SnapShotKit process to get stage-by-stage D-Bus
 | `snapshotkit-capture` | Owns libpipewire. Answers `grab` over a pipe, writes frames into a shared file in `XDG_RUNTIME_DIR`. |
 | `snapshotkit-overlay` | Avalonia. Spawned per capture, reports the chosen region on stdout, exits. |
 | `snapshotkit` | Thin AOT client. Turns a keypress into a D-Bus call. |
-| `snapshotkit-editor` | Avalonia. Opens a `.ssk` snapshot for annotation, an ordinary image by wrapping it in one, or the library when given none. Standalone, not part of the capture path. |
+| `snapshotkit-editor` | Avalonia. Opens a `.ssk` snapshot for annotation, an ordinary image by wrapping it in one, or an empty editor when given none (`--library` for the library window). Standalone, not part of the capture path. |
 
 The splits are not stylistic. Capture is separate because libpipewire cannot be driven from inside the .NET process; the overlay is separate because a resident Avalonia costs 98 MB and never gives it back.
 
