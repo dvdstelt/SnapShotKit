@@ -8,21 +8,27 @@ using SnapShotKit.Ui;
 namespace SnapShotKit.Editor;
 
 /// <summary>
-/// The one band that carries both the drawing tools and their settings.
+/// The drawing tools along the top of the window, and their styles and settings in a sidebar down
+/// its right.
 ///
-/// It replaces the old icon rail and right-hand properties panel together. The settings shown
-/// change with the tool, but their positions do not: colour is always in the same place, weight
-/// always the next along. That is the whole point of the arrangement — the hand learns where a
-/// control is once, and switching tools never moves it somewhere else.
+/// Split across the two because a single band ran out of width. Every tool that gained a setting
+/// took it from the room the others' settings had, and a band that scrolls sideways hides exactly
+/// the control somebody is looking for. A sidebar grows downward, where there is room to spare, and
+/// it is where Snagit keeps the same things. One class still owns both, since they are one set of
+/// controls answering to one tool or selection, and only where they are shown differs.
+///
+/// The settings shown change with the tool, but their order does not: colour is always above
+/// weight. The hand learns where a control is once, and switching tools never moves it past
+/// another one.
 ///
 /// Every setting offers a handful of presets and a way to reach any other value. The presets carry
 /// almost all of the use; being unable to reach the one value that is not on the list is the kind
 /// of limit that makes a tool feel like a toy.
 ///
-/// The row of styles leads them, because a look is the unit anyone actually works in: a red box
-/// with no fill is one decision, not three controls in a row. The settings after it are for the
-/// times the answer is not on the list, and they say what they are set to whether it came from a
-/// style or from them.
+/// The styles lead the sidebar, because a look is the unit anyone actually works in: a red box with
+/// no fill is one decision, not three controls in a row. The settings under them are for the times
+/// the answer is not on the list, and they say what they are set to whether it came from a style or
+/// from them.
 /// </summary>
 public sealed class ToolBand : Border
 {
@@ -41,6 +47,9 @@ public sealed class ToolBand : Border
 
     const double CellHeight = 50;
 
+    /// <summary>Four styles to a row, with the sidebar's padding either side.</summary>
+    const double SidebarWidth = 288;
+
     readonly List<(EditorTool Tool, Border Cell, Control Glyph, TextBlock Label)> tools = [];
 
     readonly ColourField colour;
@@ -56,12 +65,16 @@ public sealed class ToolBand : Border
     readonly Segmented fill;
     readonly Segmented cutDirection;
 
-    readonly StyleField style;
+    readonly StyleGrid style;
+
+    readonly Control stylesSection;
+    readonly StackPanel settings;
+    readonly Control settingsSection;
+    readonly TextBlock nothingToSet;
 
     readonly TextBox canvasWidth;
     readonly TextBox canvasHeight;
 
-    readonly Control styleGroup;
     readonly Control colourGroup;
     readonly Control fillColourGroup;
     readonly Control textBackGroup;
@@ -88,7 +101,7 @@ public sealed class ToolBand : Border
 
     const string CanvasTip = "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out.";
 
-    public ToolBand(EditorState state)
+    public ToolBand()
     {
         Background = Tokens.BgBrush;
         BorderBrush = Tokens.DividerBrush;
@@ -125,11 +138,10 @@ public sealed class ToolBand : Border
         }));
         fill = new Segmented(["None", "Solid"], index => FillChosen?.Invoke(index == 1));
 
-        style = new StyleField(state, chosen => StyleChosen?.Invoke(chosen));
+        style = new StyleGrid(chosen => StyleChosen?.Invoke(chosen));
 
-        // Every group is captioned, the colours included. Without a caption the swatches sit at a
-        // different height from everything beside them and the row reads as broken.
-        styleGroup = Group("Style", style);
+        // Every group is captioned, the colours included, so each setting says what it is without
+        // leaning on what happens to sit beside it.
         colourGroup = Group("Colour", colour);
         fillColourGroup = Group("Fill colour", fillColour);
         weightGroup = Group("Weight", weight);
@@ -156,8 +168,8 @@ public sealed class ToolBand : Border
 
         pictureGroup = Group("Picture", new StackPanel
         {
-            Orientation = Orientation.Horizontal,
             Spacing = Tokens.Space.S1,
+            HorizontalAlignment = HorizontalAlignment.Left,
             Children =
             {
                 TextAction("Flip horizontally", () => PictureFlipRequested?.Invoke(true)),
@@ -166,18 +178,13 @@ public sealed class ToolBand : Border
             }
         });
 
-        // Every settings group lives in this one strip, in a fixed order. Only the ones the active
-        // tool uses are visible; the rest collapse, and the ones that remain do not move.
-        var settings = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = Tokens.Space.S4,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        // Every settings group lives in this one column, in a fixed order. Only the ones the active
+        // tool uses are visible; the rest collapse, and the ones that remain keep their order.
+        settings = new StackPanel { Spacing = Tokens.Space.S4 };
 
         foreach (var group in new[]
                  {
-                     styleGroup, colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
+                     colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
                      headGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
                      cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, pictureGroup
                  })
@@ -185,35 +192,35 @@ public sealed class ToolBand : Border
             settings.Children.Add(group);
         }
 
-        // The settings take whatever room the tools leave, and scroll within it when a tool has
-        // more of them than the window is wide. A scroll bar would eat into a band whose height is
-        // fixed, so there is none: the wheel moves it, and at any comfortable width it never moves
-        // at all. Without this the groups are laid out past the end of the band and drawn over the
-        // controls sharing it.
-        var strip = new ScrollViewer
+        stylesSection = Section("Styles", style);
+        settingsSection = Section("Properties", settings);
+
+        nothingToSet = Labels.Body("Nothing to set for this tool. Select something on the canvas to change how it looks.",
+            12, Tokens.Neutral500Brush);
+        nothingToSet.TextWrapping = TextWrapping.Wrap;
+
+        Sidebar = new Border
         {
-            Content = settings,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Hidden,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            VerticalAlignment = VerticalAlignment.Center
+            Width = SidebarWidth,
+            Background = Tokens.BgBrush,
+            BorderBrush = Tokens.DividerBrush,
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            Child = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                Content = new StackPanel
+                {
+                    Margin = new Thickness(Tokens.Space.S4),
+                    Spacing = Tokens.Space.S6,
+                    Children = { stylesSection, settingsSection, nothingToSet }
+                }
+            }
         };
 
-        // A dock panel rather than a row: a horizontal stack offers its children all the room in
-        // the world, and a scroller offered infinite room never scrolls.
-        var left = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
-
+        // The tools in the middle of the window, where the eye already is, and undo and redo at the
+        // end of the same row.
         var tools = BuildToolCells();
-        var rule = Rule();
-
-        DockPanel.SetDock(tools, Dock.Left);
-        DockPanel.SetDock(rule, Dock.Left);
-
-        rule.Margin = new Thickness(Tokens.Space.S4, 0);
-        strip.Margin = new Thickness(Tokens.Space.S4, 0, 0, 0);
-
-        left.Children.Add(tools);
-        left.Children.Add(rule);
-        left.Children.Add(strip);
+        tools.HorizontalAlignment = HorizontalAlignment.Center;
 
         var right = new StackPanel
         {
@@ -239,14 +246,17 @@ public sealed class ToolBand : Border
             Children = { canvasReadout, BuildZoom() }
         };
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(Tokens.Space.S4, 0) };
-        Grid.SetColumn(left, 0);
-        Grid.SetColumn(right, 1);
-        grid.Children.Add(left);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,*"), Margin = new Thickness(Tokens.Space.S4, 0) };
+        Grid.SetColumn(tools, 1);
+        Grid.SetColumn(right, 2);
+        grid.Children.Add(tools);
         grid.Children.Add(right);
 
         Child = grid;
     }
+
+    /// <summary>The styles and settings, for the window to put down its right-hand side.</summary>
+    public Control Sidebar { get; }
 
     /// <summary>The canvas size and the zoom, for the window to put along its foot. See the constructor.</summary>
     public Control ViewControls { get; }
@@ -360,17 +370,40 @@ public sealed class ToolBand : Border
         VerticalAlignment = VerticalAlignment.Center
     };
 
-    /// <summary>A settings group: its condensed caption above the control it names.</summary>
-    static Control Group(string caption, Control control) => new StackPanel
+    /// <summary>A part of the sidebar: a heading over a hairline, and what it heads.</summary>
+    static Control Section(string heading, Control content) => new StackPanel
     {
-        Spacing = 2,
-        VerticalAlignment = VerticalAlignment.Center,
+        Spacing = Tokens.Space.S3,
         Children =
         {
-            Labels.Heading(caption, 10.5, 0.18, Tokens.Neutral500Brush),
-            control
+            new Border
+            {
+                BorderBrush = Tokens.DividerBrush,
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Padding = new Thickness(0, 0, 0, Tokens.Space.S1),
+                Child = Labels.Heading(heading, 12, 0.16, Tokens.Neutral700Brush)
+            },
+            content
         }
     };
+
+    /// <summary>A settings group: its condensed caption above the control it names.</summary>
+    static Control Group(string caption, Control control)
+    {
+        // At its own width rather than the sidebar's. Stretched, a two-segment switch is a frame
+        // with a wide empty stretch inside it that reads as a third option nobody can pick.
+        control.HorizontalAlignment = HorizontalAlignment.Left;
+
+        return new StackPanel
+        {
+            Spacing = 2,
+            Children =
+            {
+                Labels.Heading(caption, 10.5, 0.18, Tokens.Neutral500Brush),
+                control
+            }
+        };
+    }
 
     static Control TextAction(string text, Action clicked)
     {
@@ -651,8 +684,8 @@ public sealed class ToolBand : Border
             ? selected.WearsStyle(candidate.Look)
             : defaults.Wears(candidate.Look));
 
-        style.Show(kind, styles, worn);
-        styleGroup.IsVisible = styles.Count > 0;
+        style.Show(styles, worn);
+        stylesSection.IsVisible = styles.Count > 0;
 
         colourGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box or EditorTool.Text or EditorTool.Step;
         weightGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box;
@@ -682,6 +715,11 @@ public sealed class ToolBand : Border
 
         var backed = selected is TextAnnotation backedText ? backedText.HasBackground : defaults.TextBackgrounded;
         textBackColourGroup.IsVisible = kind is EditorTool.Text && backed;
+
+        // A sidebar with nothing in it says so, rather than being an empty column that looks as if
+        // something failed to load.
+        settingsSection.IsVisible = settings.Children.Any(group => group.IsVisible);
+        nothingToSet.IsVisible = !stylesSection.IsVisible && !settingsSection.IsVisible;
 
         switch (selected)
         {

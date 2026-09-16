@@ -11,12 +11,11 @@ using SnapShotKit.Ui;
 namespace SnapShotKit.Editor;
 
 /// <summary>
-/// The editor: a menu bar, one band carrying the drawing tools and their settings, the capture on a
-/// mat in the middle, and the recent captures along the bottom.
+/// The editor: a menu bar, the drawing tools across the top, the capture on a mat in the middle with
+/// the styles and settings for whatever is in hand down its right, and the recent captures and a
+/// status line along the bottom.
 ///
-/// Everything is a full-width horizontal band separated by hairlines, which is what keeps the
-/// window reading as one instrument rather than a set of floating palettes. Commands live in the
-/// menus and settings live in the band; nothing floats over the picture.
+/// Commands live in the menus and settings live in the sidebar; nothing floats over the picture.
 /// </summary>
 public sealed class EditorWindow : Window
 {
@@ -132,9 +131,7 @@ public sealed class EditorWindow : Window
 
         Title = opened is null ? "SnapShotKit" : $"SnapShotKit - {Path.GetFileName(opened.Path)}";
 
-        // Wide enough for the band's busiest tool, which is text with a plate or a filled box. A
-        // window that opens too narrow for its own chrome starts by hiding a control the user has
-        // not been shown yet.
+        // Room for the sidebar beside a screenshot of any ordinary width at a size worth looking at.
         Width = 1440;
         Height = 760;
         Background = Tokens.BgBrush;
@@ -144,7 +141,7 @@ public sealed class EditorWindow : Window
         menu = new MenuBar("SnapShotKit");
         BuildMenus();
 
-        band = new ToolBand(state);
+        band = new ToolBand();
         WireBand();
 
         recent = new RecentStrip();
@@ -230,6 +227,11 @@ public sealed class EditorWindow : Window
         DockPanel.SetDock(recent, Dock.Bottom);
         layout.Children.Add(recent);
 
+        // After the strip along the bottom, so the sidebar stops above it rather than running the
+        // whole height of the window, which leaves the recent captures their full width.
+        DockPanel.SetDock(band.Sidebar, Dock.Right);
+        layout.Children.Add(band.Sidebar);
+
         layout.Children.Add(mat);
         Content = layout;
 
@@ -312,6 +314,7 @@ public sealed class EditorWindow : Window
         // The drawing tools are about a capture, and there is none. The menus thin out on their
         // own, since their entries are built afresh each time they are opened.
         band.IsVisible = false;
+        band.Sidebar.IsVisible = false;
         band.ViewControls.IsVisible = false;
         confirmBar.IsVisible = false;
 
@@ -765,7 +768,7 @@ public sealed class EditorWindow : Window
     /// <summary>
     /// Takes a ready-made look, for the next annotation drawn and for the selected one.
     ///
-    /// The same two places every other setting on the band lands in, and one undoable step for the
+    /// The same two places every other setting in the sidebar lands in, and one undoable step for the
     /// whole look rather than one per property it happens to cover.
     /// </summary>
     void ApplyStyle(AnnotationStyle style)
@@ -799,7 +802,7 @@ public sealed class EditorWindow : Window
         UpdateChrome();
     }
 
-    /// <summary>Which tool's settings the band is currently showing, which is the selection's kind when there is one.</summary>
+    /// <summary>Which tool's settings the sidebar is currently showing, which is the selection's kind when there is one.</summary>
     EditorTool BandTarget() => canvas?.Selected switch
     {
         ArrowAnnotation => EditorTool.Arrow,
@@ -1555,6 +1558,7 @@ public sealed class EditorWindow : Window
         WireCanvas();
         framedCanvas = ShowCanvas();
         band.IsVisible = true;
+        band.Sidebar.IsVisible = true;
         band.ViewControls.IsVisible = true;
 
         // Both hold full-resolution bitmaps in native memory the collector cannot see, so leaving
@@ -1587,7 +1591,7 @@ public sealed class EditorWindow : Window
         recent.Show(SnapshotItem.Build(entries, thumbnails, thumbnailWork.Token), snapshot?.Path ?? string.Empty);
     }
 
-    /// <summary>Points the band, the menu bar and the status line at whatever is true now.</summary>
+    /// <summary>Points the tools, the sidebar, the menu bar and the status line at whatever is true now.</summary>
     void UpdateChrome()
     {
         // Nothing open: the band is not on screen and the status line has nothing to measure. The
