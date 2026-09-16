@@ -31,11 +31,17 @@ public sealed class ToolBand : Border
 
     static readonly double[] TextSizes = [15, 22, 30, 44];
 
-    const double BandHeight = 62;
-    const double CellWidth = 40;
-    const double CellHeight = 34;
+    const double BandHeight = 68;
 
-    readonly List<(EditorTool Tool, Border Cell, Control Glyph)> tools = [];
+    /// <summary>
+    /// Wide enough for the longest label under its icon. Every cell is the same width, so the row
+    /// reads as a set of equal tools rather than as words of different lengths.
+    /// </summary>
+    const double CellWidth = 54;
+
+    const double CellHeight = 50;
+
+    readonly List<(EditorTool Tool, Border Cell, Control Glyph, TextBlock Label)> tools = [];
 
     readonly ColourField colour;
     readonly ColourField fillColour;
@@ -262,19 +268,24 @@ public sealed class ToolBand : Border
     {
         var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
 
-        foreach (var (tool, glyph, tip) in new[]
+        // Named under their icons, not only in a tooltip. A row of icons is quick to use once it is
+        // learned and slow to learn, and "which of these is blur" should not need a hover to answer.
+        foreach (var (tool, glyph, name, tip) in new[]
                  {
-                     (EditorTool.Select, Lucide.Select, "Select and move  (V)"),
-                     (EditorTool.Arrow, Lucide.Arrow, "Arrow  (A)"),
-                     (EditorTool.Box, Lucide.Box, "Box  (B)"),
-                     (EditorTool.Blur, Lucide.Blur, "Blur  (L)"),
-                     (EditorTool.Step, Lucide.Step, "Numbered marker  (N)\nEach one takes the next number up."),
-                     (EditorTool.Text, Lucide.Text, "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
-                     (EditorTool.Canvas, Lucide.Crop, "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out."),
-                     (EditorTool.Cut, Lucide.Cut, "Cut out  (X)\nDrag down the picture to take a band of rows out of it, or across to take columns.\nWhat is left closes up.")
+                     (EditorTool.Select, Lucide.Select, "Select", "Select and move  (V)"),
+                     (EditorTool.Arrow, Lucide.Arrow, "Arrow", "Arrow  (A)"),
+                     (EditorTool.Box, Lucide.Box, "Box", "Box  (B)"),
+                     (EditorTool.Blur, Lucide.Blur, "Blur", "Blur  (L)"),
+                     (EditorTool.Step, Lucide.Step, "Marker", "Numbered marker  (N)\nEach one takes the next number up."),
+                     (EditorTool.Text, Lucide.Text, "Text", "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
+                     (EditorTool.Canvas, Lucide.Crop, "Canvas", "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out."),
+                     (EditorTool.Cut, Lucide.Cut, "Cut", "Cut out  (X)\nDrag down the picture to take a band of rows out of it, or across to take columns.\nWhat is left closes up.")
                  })
         {
-            var icon = Lucide.Icon(glyph, 17, Tokens.Neutral800Brush);
+            var icon = Lucide.Icon(glyph, 19, Tokens.Neutral800Brush);
+
+            var label = Labels.Body(name, 11, Tokens.Neutral700Brush);
+            label.HorizontalAlignment = HorizontalAlignment.Center;
 
             var cell = new Border
             {
@@ -282,7 +293,12 @@ public sealed class ToolBand : Border
                 Height = CellHeight,
                 Background = Tokens.BgBrush,
                 CornerRadius = Tokens.Radius,
-                Child = icon,
+                Child = new StackPanel
+                {
+                    Spacing = 3,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Children = { icon, label }
+                },
                 Cursor = new Cursor(StandardCursorType.Hand)
             };
 
@@ -304,7 +320,7 @@ public sealed class ToolBand : Border
             };
 
             ToolTip.SetTip(cell, tip);
-            tools.Add((tool, cell, icon));
+            tools.Add((tool, cell, icon, label));
             strip.Children.Add(cell);
         }
 
@@ -507,10 +523,11 @@ public sealed class ToolBand : Border
     {
         Active = tool;
 
-        foreach (var (candidate, cell, glyph) in tools)
+        foreach (var (candidate, cell, glyph, label) in tools)
         {
             var active = candidate == tool;
             cell.Background = active ? Tokens.AccentBrush : Tokens.BgBrush;
+            label.Foreground = active ? Tokens.BgBrush : Tokens.Neutral700Brush;
 
             if (glyph is Viewbox { Child: Avalonia.Controls.Shapes.Path path })
             {
