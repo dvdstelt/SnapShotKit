@@ -614,7 +614,7 @@ public sealed class CanvasView : Decorator
 
     /// <summary>
     /// Everything the pictures cover, in image pixels, or the capture where it was taken when there
-    /// are no pictures left at all.
+    /// are no pictures left at all, or a blank canvas's starting size when there never was one.
     ///
     /// What "fit" means for the canvas. It used to be the capture, and once a picture can be pasted
     /// beside it or the capture moved, the capture alone would crop whatever was put next to it.
@@ -623,7 +623,7 @@ public sealed class CanvasView : Decorator
         .OfType<ImageAnnotation>()
         .Select(picture => new Rect(picture.X, picture.Y, picture.Width, picture.Height))
         .Aggregate((Rect?)null, (union, next) => union?.Union(next) ?? next)
-        ?? new Rect(0, 0, snapshot.Bitmap.PixelSize.Width, snapshot.Bitmap.PixelSize.Height);
+        ?? new Rect(snapshot.EmptySize);
 
     /// <summary>
     /// Where the capture's top-left corner falls on the control.
@@ -1056,7 +1056,7 @@ public sealed class CanvasView : Decorator
     /// <summary>Puts the canvas wherever the pictures and any size set by hand now say it belongs.</summary>
     void Refit()
     {
-        var fitted = CanvasFit.For(snapshot.Document, snapshot.Bitmap.Size);
+        var fitted = CanvasFit.For(snapshot.Document, snapshot.EmptySize);
 
         if (!CanvasFit.Apply(snapshot.Document, fitted))
         {
@@ -1088,7 +1088,7 @@ public sealed class CanvasView : Decorator
         }
 
         var document = snapshot.Document;
-        var fitted = CanvasFit.For(new SnapshotDocument { Layers = document.Layers }, snapshot.Bitmap.Size);
+        var fitted = CanvasFit.For(new SnapshotDocument { Layers = document.Layers }, snapshot.EmptySize);
 
         if (document.ManualCanvas is null && SameAsCanvas(fitted))
         {
@@ -1381,7 +1381,7 @@ public sealed class CanvasView : Decorator
             if (session.Fits)
             {
                 document.ManualCanvas = null;
-                CanvasFit.Apply(document, CanvasFit.For(document, snapshot.Bitmap.Size));
+                CanvasFit.Apply(document, CanvasFit.For(document, snapshot.EmptySize));
             }
             else
             {

@@ -23,7 +23,18 @@ public sealed class Snapshot : IDisposable
     /// <summary>Where pasted pictures are kept inside the archive, each named after its own contents.</summary>
     const string ImageFolder = "images/";
 
-    Snapshot(string path, SnapshotDocument document, byte[] originalPng, Bitmap bitmap, string? meta)
+    /// <summary>
+    /// How large a blank canvas starts, before anything is put on it.
+    ///
+    /// Only a starting point. The canvas fits the first picture pasted onto it, so this is the size
+    /// of the empty space somebody is looking at while they reach for Ctrl+V, and nothing more.
+    /// </summary>
+    public static readonly Avalonia.PixelSize BlankSize = new(800, 600);
+
+    /// <summary>What a blank snapshot is called until somebody saves it as something else.</summary>
+    const string BlankName = "untitled";
+
+    Snapshot(string path, SnapshotDocument document, byte[]? originalPng, Bitmap? bitmap, string? meta, bool written)
     {
         Path = path;
         Document = document;
@@ -31,9 +42,21 @@ public sealed class Snapshot : IDisposable
         Bitmap = bitmap;
         Meta = meta;
         OriginFolder = FolderOf(meta);
+        this.written = written;
 
-        pictures[ImageAnnotation.Capture] = new Picture(originalPng, bitmap);
+        if (originalPng is not null)
+        {
+            pictures[ImageAnnotation.Capture] = new Picture(originalPng, bitmap);
+        }
     }
+
+    /// <summary>
+    /// Whether this snapshot has ever been on disk at <see cref="Path"/>.
+    ///
+    /// Only a blank one has not. Its name was chosen when it was made, and another blank may have
+    /// been saved under that same name since: saving over it would quietly replace somebody's work.
+    /// </summary>
+    bool written;
 
     /// <summary>A picture's bytes as they arrived, and the decoded bitmap drawn from them, which is null when they would not decode.</summary>
     sealed record Picture(byte[] Png, Bitmap? Bitmap);
@@ -52,10 +75,22 @@ public sealed class Snapshot : IDisposable
 
     public SnapshotDocument Document { get; }
 
-    public byte[] OriginalPng { get; }
+    /// <summary>The capture's bytes as taken, or null for a blank snapshot, which has no capture.</summary>
+    public byte[]? OriginalPng { get; }
 
-    /// <summary>The capture, decoded. Wherever its layer has been moved to, this is the picture as taken.</summary>
-    public Bitmap Bitmap { get; }
+    /// <summary>
+    /// The capture, decoded, or null for a blank snapshot. Wherever its layer has been moved to, this
+    /// is the picture as taken.
+    /// </summary>
+    public Bitmap? Bitmap { get; }
+
+    /// <summary>
+    /// The canvas when there are no pictures on it: the capture where it was taken, or the size a
+    /// blank canvas starts at.
+    /// </summary>
+    public Avalonia.Size EmptySize => Bitmap is { } capture
+        ? new Avalonia.Size(capture.PixelSize.Width, capture.PixelSize.Height)
+        : new Avalonia.Size(BlankSize.Width, BlankSize.Height);
 
     /// <summary>Carried through untouched so saving never discards what the daemon recorded.</summary>
     public string? Meta { get; }
@@ -152,30 +187,43 @@ public sealed class Snapshot : IDisposable
     {
         using var archive = ZipFile.OpenRead(path);
 
-        var originalPng = Read(archive, ImageAnnotation.Capture)
-            ?? throw new InvalidDataException($"{path} has no original.png, so it is not a snapshot.");
+        // Either may be missing, but not both. A snapshot started blank has a document and no
+        // capture; one from before documents were written has a capture and no document.
+        var originalPng = Read(archive, ImageAnnotation.Capture);
+        var documentJson = ReadText(archive, "document.json");
+
+        if (originalPng is null && documentJson is null)
+        {
+            throw new InvalidDataException($"{path} has neither a capture nor a document, so it is not a snapshot.");
+        }
 
         // A snapshot with no document at all predates every version, and is migrated from nothing.
         // Given the current version instead it would be taken as already having its capture layer,
         // and open as an empty canvas.
-        var documentJson = ReadText(archive, "document.json");
         var document = documentJson is null
             ? new SnapshotDocument { Version = 0 }
             : JsonSerializer.Deserialize<SnapshotDocument>(documentJson, Json) ?? new SnapshotDocument { Version = 0 };
 
-        using var stream = new MemoryStream(originalPng);
-        var bitmap = new Bitmap(stream);
+        Bitmap? bitmap = null;
+
+        if (originalPng is not null)
+        {
+            using var stream = new MemoryStream(originalPng);
+            bitmap = new Bitmap(stream);
+        }
+
+        var size = bitmap?.PixelSize ?? BlankSize;
 
         // A document written before the canvas was recorded, or by hand, still opens: the canvas is
         // then exactly the capture, which is what it was before a canvas could be anything else.
         if (document.Canvas.Width == 0 || document.Canvas.Height == 0)
         {
-            document.Canvas = new CanvasArea { Width = bitmap.PixelSize.Width, Height = bitmap.PixelSize.Height };
+            document.Canvas = new CanvasArea { Width = size.Width, Height = size.Height };
         }
 
-        Migrate(document, bitmap.PixelSize);
+        Migrate(document, bitmap?.PixelSize);
 
-        var snapshot = new Snapshot(path, document, originalPng, bitmap, ReadText(archive, "meta.json"));
+        var snapshot = new Snapshot(path, document, originalPng, bitmap, ReadText(archive, "meta.json"), written: true);
 
         foreach (var entry in archive.Entries.Where(entry => entry.FullName.StartsWith(ImageFolder, StringComparison.Ordinal)))
         {
@@ -224,10 +272,25 @@ public sealed class Snapshot : IDisposable
             Layers = [CaptureLayer(bitmap.PixelSize)]
         };
 
-        var snapshot = new Snapshot(path, document, originalPng, bitmap, meta);
+        var snapshot = new Snapshot(path, document, originalPng, bitmap, meta, written: false);
         snapshot.Save();
         return snapshot;
     }
+
+    /// <summary>
+    /// A snapshot with nothing in it, for pasting into.
+    ///
+    /// Not written anywhere until it is saved. A blank opened and closed again has nothing in it
+    /// worth keeping, and writing it straight away, the way an import is, would leave an empty
+    /// "untitled" in the library every time somebody changed their mind.
+    /// </summary>
+    public static Snapshot Blank() => new(
+        SnapshotLibrary.FreePath(BlankName),
+        new SnapshotDocument { Canvas = new CanvasArea { Width = BlankSize.Width, Height = BlankSize.Height } },
+        originalPng: null,
+        bitmap: null,
+        meta: null,
+        written: false);
 
     /// <summary>
     /// Brings an older document up to the current format.
@@ -256,7 +319,8 @@ public sealed class Snapshot : IDisposable
     /// There is nothing here that could repair one, and stamping it back down to this version would
     /// be this build telling a later one that migrations it has never heard of have already run.
     /// </summary>
-    static void Migrate(SnapshotDocument document, Avalonia.PixelSize capture)
+    /// <param name="capture">The capture's size, or null for a snapshot without one, which has none to migrate into a layer.</param>
+    static void Migrate(SnapshotDocument document, Avalonia.PixelSize? capture)
     {
         if (document.Version >= SnapshotDocument.Current)
         {
@@ -273,16 +337,16 @@ public sealed class Snapshot : IDisposable
             document.Layers.AddRange(rest);
         }
 
-        if (document.Version < 5)
+        if (document.Version < 5 && capture is { } size)
         {
-            document.Layers.Insert(0, CaptureLayer(capture));
+            document.Layers.Insert(0, CaptureLayer(size));
 
             // Cropped or padded by hand, since before now the only canvas nobody had touched was
             // the capture exactly. Left as it is, rather than snapping to the capture the first time
             // anything on it moves.
             var canvas = document.Canvas;
 
-            if (canvas.X != 0 || canvas.Y != 0 || canvas.Width != capture.Width || canvas.Height != capture.Height)
+            if (canvas.X != 0 || canvas.Y != 0 || canvas.Width != size.Width || canvas.Height != size.Height)
             {
                 CanvasFit.SetByHand(document, new Avalonia.Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height));
             }
@@ -305,6 +369,10 @@ public sealed class Snapshot : IDisposable
         // half-written snapshot where the original used to be.
         var temporary = path + ".writing";
 
+        // A blank canvas can be the first thing anybody ever saves, before the daemon has made the
+        // folder for a capture.
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+
         using (var file = File.Create(temporary))
         using (var archive = new ZipArchive(file, ZipArchiveMode.Create))
         {
@@ -315,7 +383,10 @@ public sealed class Snapshot : IDisposable
                 WriteText(archive, "meta.json", Meta);
             }
 
-            WriteBytes(archive, ImageAnnotation.Capture, OriginalPng);
+            if (OriginalPng is not null)
+            {
+                WriteBytes(archive, ImageAnnotation.Capture, OriginalPng);
+            }
 
             // Only the pictures something still stands on. One pasted and then deleted is kept in
             // memory for the undo history's sake, but a saved document has no history to want it.
@@ -336,9 +407,16 @@ public sealed class Snapshot : IDisposable
 
         File.Move(temporary, path, overwrite: true);
         Path = path;
+        written = true;
     }
 
-    public void Save() => SaveAs(Path);
+    /// <summary>
+    /// Writes the snapshot where it already lives.
+    ///
+    /// A blank one being saved for the first time takes the next free name instead, if the one it
+    /// was given has been taken since. See <see cref="written"/>.
+    /// </summary>
+    public void Save() => SaveAs(!written && File.Exists(Path) ? SnapshotLibrary.FreePath(BlankName) : Path);
 
     static byte[]? Read(ZipArchive archive, string name)
     {

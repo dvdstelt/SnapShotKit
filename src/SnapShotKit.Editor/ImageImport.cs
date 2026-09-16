@@ -69,7 +69,10 @@ public static class ImageImport
         Directory.CreateDirectory(SnapShotKitPaths.Snapshots);
 
         var (png, width, height) = ToPng(full);
-        var target = NextAvailablePath(Path.GetFileNameWithoutExtension(full));
+        // Named after the file it came from rather than given the next capture number. An imported
+        // picture already has a name the user chose and recognises, and "diagram.ssk" beside
+        // "diagram.png" is the connection the numbering would throw away.
+        var target = SnapshotLibrary.FreePath(Path.GetFileNameWithoutExtension(full));
 
         // Disposed straight away: this is the writing of a file, and whoever asked for it opens it
         // for themselves afterwards. Keeping the decoded picture alive here would be a second copy
@@ -131,35 +134,4 @@ public static class ImageImport
         source = new { width, height },
         imported = new { from = path }
     }, Json);
-
-    /// <summary>
-    /// Where the snapshot goes.
-    ///
-    /// Named after the file it came from rather than given the next capture number. An imported
-    /// picture already has a name the user chose and recognises, and "diagram.ssk" beside
-    /// "diagram.png" is the connection the numbering would throw away.
-    /// </summary>
-    static string NextAvailablePath(string name)
-    {
-        // A file whose whole name is its extension leaves nothing to name the snapshot after, and
-        // it still has to land somewhere.
-        var stem = string.IsNullOrWhiteSpace(name) ? "image" : name;
-
-        var candidate = Path.Combine(SnapShotKitPaths.Snapshots, $"{stem}.ssk");
-        if (!File.Exists(candidate))
-        {
-            return candidate;
-        }
-
-        for (var number = 2; number < 10000; number++)
-        {
-            candidate = Path.Combine(SnapShotKitPaths.Snapshots, $"{stem}-{number}.ssk");
-            if (!File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        throw new InvalidOperationException($"Could not find a free name for {stem}.");
-    }
 }

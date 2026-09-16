@@ -134,6 +134,37 @@ public static class SnapshotLibrary
         }
     }
 
+    /// <summary>
+    /// A name in the snapshots folder that nothing has taken yet, made from <paramref name="name"/>.
+    ///
+    /// Named after something the user recognises rather than given the next capture number: an
+    /// imported picture after its own file, a blank canvas after being untitled. Colliding names
+    /// take a suffix.
+    /// </summary>
+    public static string FreePath(string name)
+    {
+        // A file whose whole name is its extension leaves nothing to name the snapshot after, and
+        // it still has to land somewhere.
+        var stem = string.IsNullOrWhiteSpace(name) ? "image" : name;
+
+        var candidate = Path.Combine(Folder, $"{stem}.ssk");
+        if (!File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        for (var number = 2; number < 10000; number++)
+        {
+            candidate = Path.Combine(Folder, $"{stem}-{number}.ssk");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException($"Could not find a free name for {stem}.");
+    }
+
     public static void Delete(SnapshotEntry entry) => Delete(entry.Path);
 
     public static void Delete(string path) => File.Delete(path);

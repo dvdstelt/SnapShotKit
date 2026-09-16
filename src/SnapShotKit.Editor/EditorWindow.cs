@@ -238,7 +238,7 @@ public sealed class EditorWindow : Window
         var heading = Labels.Heading("NOTHING OPEN", 13, 0.18, Tokens.Neutral600Brush);
         heading.HorizontalAlignment = HorizontalAlignment.Center;
 
-        var hint = Labels.Body("Choose a capture from the strip below, or press Print to take one.",
+        var hint = Labels.Body("Choose a capture from the strip below, press Print to take one, or Ctrl+V to paste a picture.",
             13, Tokens.Neutral500Brush);
         hint.HorizontalAlignment = HorizontalAlignment.Center;
 
@@ -449,7 +449,7 @@ public sealed class EditorWindow : Window
     {
         menu.Add("File", FileMenu);
 
-        menu.Add("Edit", () => snapshot is null ? NoCapture :
+        menu.Add("Edit", () => snapshot is null ? [MenuEntry.Item("Paste picture", "Ctrl+V", () => _ = PasteAsync())] :
         [
             MenuEntry.Item("Undo", "Ctrl+Z", Undo),
             MenuEntry.Item("Redo", "Ctrl+Shift+Z", Redo),
@@ -524,7 +524,7 @@ public sealed class EditorWindow : Window
     {
         List<MenuEntry> entries =
         [
-            MenuEntry.Item("New capture", "Print", NewCapture),
+            MenuEntry.Item("New", "Ctrl+N", () => _ = NewBlankAsync()),
             MenuEntry.Item("Open…", "Ctrl+O", OpenLibrary),
             MenuEntry.Item("Open image…", "Ctrl+Shift+O", () => _ = OpenImageAsync()),
             MenuEntry.Separator
@@ -1287,41 +1287,40 @@ public sealed class EditorWindow : Window
         Report(onCanvas ? $"Deleted {name}, and closed it" : $"Deleted {name}");
     }
 
-    /// <summary>Asks the daemon for a capture, the same way pressing Print does.</summary>
-    void NewCapture()
+    /// <summary>
+    /// Puts a blank canvas in the window, for pasting pictures onto.
+    ///
+    /// Not a new capture, which is what this used to be: Print and the panel menu already take one,
+    /// and a second way to do the same thing left no way at all to start from a picture somebody
+    /// already had. False when there is unsaved work and the answer was to keep it.
+    /// </summary>
+    async Task<bool> NewBlankAsync()
     {
-        try
+        if (dirty && !await ConfirmDiscardAsync())
         {
-            var startInfo = new System.Diagnostics.ProcessStartInfo("snapshotkit") { UseShellExecute = false };
-            startInfo.ArgumentList.Add("capture");
-            System.Diagnostics.Process.Start(startInfo);
+            return false;
         }
-        catch (Exception exception)
-        {
-            Report($"Could not start a capture: {exception.Message}");
-        }
+
+        Present(Snapshot.Blank(), "New canvas. Paste a picture onto it with Ctrl+V.");
+        return true;
     }
 
     /// <summary>
-    /// Pastes the picture on the clipboard onto the canvas.
+    /// Pastes the picture on the clipboard onto the canvas, or onto a new blank one when nothing is
+    /// open.
     ///
     /// The select tool is taken up as it lands, because the picture arrives selected and the next
     /// thing done with a pasted picture is nearly always moving it. With a drawing tool in hand the
     /// first press on it would draw rather than pick it up.
     /// </summary>
-    async Task PasteAsync()
+    internal async Task PasteAsync()
     {
-        if (snapshot is null || canvas is null)
-        {
-            return;
-        }
-
         // Asked of the application that copied, which can take its time. What is on the canvas by
         // the time it answers may not be what was there when Ctrl+V was pressed.
         var pastingInto = snapshot;
         var (png, problem) = await ClipboardPicture.ReadAsync();
 
-        if (!ReferenceEquals(snapshot, pastingInto) || canvas is null)
+        if (!ReferenceEquals(snapshot, pastingInto))
         {
             return;
         }
@@ -1329,6 +1328,18 @@ public sealed class EditorWindow : Window
         if (png is null)
         {
             Report(problem);
+            return;
+        }
+
+        // Nothing open is somewhere to start rather than nowhere to paste. Only once there turns
+        // out to be a picture, so an empty clipboard does not leave an empty canvas behind it.
+        if (snapshot is null && !await NewBlankAsync())
+        {
+            return;
+        }
+
+        if (snapshot is null || canvas is null)
+        {
             return;
         }
 
@@ -1367,10 +1378,20 @@ public sealed class EditorWindow : Window
             : default;
     }
 
+    /// <summary>A blank canvas asked for from the library, with the clipboard's picture on it when that was asked for too.</summary>
+    async Task NewFromLibraryAsync(bool paste)
+    {
+        if (await NewBlankAsync() && paste)
+        {
+            await PasteAsync();
+        }
+    }
+
     void OpenLibrary()
     {
         var window = new LibraryWindow();
         window.Chosen += OpenSnapshot;
+        window.NewRequested += paste => _ = NewFromLibraryAsync(paste);
         window.Show(this);
     }
 
@@ -1459,6 +1480,17 @@ public sealed class EditorWindow : Window
             return;
         }
 
+        Present(next, note ?? $"Opened {Path.GetFileName(next.Path)}");
+    }
+
+    /// <summary>
+    /// Puts a snapshot in the window in place of whatever was there.
+    ///
+    /// Anything unsaved has already been asked about. Whether the snapshot came off disk or was
+    /// made just now makes no difference from here on.
+    /// </summary>
+    void Present(Snapshot next, string message)
+    {
         var previousSnapshot = snapshot;
         var previousBlurs = blurs;
 
@@ -1489,7 +1521,7 @@ public sealed class EditorWindow : Window
         SetTool(tool);
         RefreshRecent();
 
-        Report(note ?? $"Opened {Path.GetFileName(next.Path)}");
+        Report(message);
     }
 
     void RefreshRecent()
@@ -1541,12 +1573,13 @@ public sealed class EditorWindow : Window
         // What the file would come out as, which is the canvas with its cuts closed up. The
         // capture's own size is worth saying only once the canvas has stopped fitting the
         // pictures, which is exactly when "1920 × 1080" on its own would be ambiguous.
-        var capture = snapshot.Bitmap.PixelSize;
         var laid = snapshot.Layout.ToLaid(size);
 
         var dimensions = laid == snapshot.Layout.ToLaid(canvas.PicturesRect())
             ? $"{laid.Width} × {laid.Height}"
-            : $"{laid.Width} × {laid.Height} canvas on a {capture.Width} × {capture.Height} capture";
+            : snapshot.Bitmap is { PixelSize: var capture }
+                ? $"{laid.Width} × {laid.Height} canvas on a {capture.Width} × {capture.Height} capture"
+                : $"{laid.Width} × {laid.Height} canvas";
 
         var cuts = snapshot.Document.Cuts.Count switch
         {
@@ -1661,6 +1694,14 @@ public sealed class EditorWindow : Window
                     OpenLibrary();
                     break;
 
+                case Key.N when control:
+                    _ = NewBlankAsync();
+                    break;
+
+                case Key.V when control:
+                    _ = PasteAsync();
+                    break;
+
                 case Key.W when control:
                     Close();
                     break;
@@ -1703,6 +1744,10 @@ public sealed class EditorWindow : Window
 
                 case Key.V:
                     _ = PasteAsync();
+                    return;
+
+                case Key.N:
+                    _ = NewBlankAsync();
                     return;
 
                 case Key.O when shift:

@@ -119,7 +119,9 @@ public sealed class ThumbnailCache : IDisposable
     static void Generate(SnapshotEntry entry, string destination, CancellationToken cancellationToken)
     {
         using var archive = ZipFile.OpenRead(entry.Path);
-        var original = archive.GetEntry("original.png");
+        // A snapshot started blank has no capture, and is shown by the first picture put on it.
+        var original = archive.GetEntry("original.png")
+            ?? archive.Entries.FirstOrDefault(entry => entry.FullName.StartsWith("images/", StringComparison.Ordinal));
 
         if (original is null)
         {

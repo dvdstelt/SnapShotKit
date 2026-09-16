@@ -52,7 +52,8 @@ public sealed class LibraryWindow : Window
 
         menu.Add("File", () =>
         [
-            MenuEntry.Item("New capture", "Print", NewCapture),
+            MenuEntry.Item("New", "Ctrl+N", () => RequestNew(paste: false)),
+            MenuEntry.Item("New from clipboard", "Ctrl+V", () => RequestNew(paste: true)),
             MenuEntry.Item("Open image…", "Ctrl+Shift+O", () => _ = OpenImageAsync()),
             MenuEntry.Separator,
             MenuEntry.Item("Close", "Ctrl+W", Close)
@@ -123,6 +124,9 @@ public sealed class LibraryWindow : Window
 
     /// <summary>Raised with the snapshot the user chose to edit.</summary>
     public event Action<string>? Chosen;
+
+    /// <summary>A blank canvas was asked for; true when the clipboard's picture should go straight onto it.</summary>
+    public event Action<bool>? NewRequested;
 
     void Refresh()
     {
@@ -294,18 +298,17 @@ public sealed class LibraryWindow : Window
         }
     }
 
-    static void NewCapture()
+    /// <summary>
+    /// Asks for a blank canvas, and hands the library back.
+    ///
+    /// The same way a tile is opened: the library says what was wanted and whoever opened it does
+    /// the opening, since there is no file yet to name.
+    /// </summary>
+    /// <param name="paste">Put the clipboard's picture on it straight away.</param>
+    void RequestNew(bool paste)
     {
-        try
-        {
-            var startInfo = new System.Diagnostics.ProcessStartInfo("snapshotkit") { UseShellExecute = false };
-            startInfo.ArgumentList.Add("capture");
-            System.Diagnostics.Process.Start(startInfo);
-        }
-        catch (Exception exception)
-        {
-            Crash.Record("could not start a capture", exception);
-        }
+        NewRequested?.Invoke(paste);
+        Close();
     }
 
     /// <summary>
@@ -395,6 +398,14 @@ public sealed class LibraryWindow : Window
 
             case Key.W when e.KeyModifiers.HasFlag(KeyModifiers.Control):
                 Close();
+                break;
+
+            case Key.N when e.KeyModifiers.HasFlag(KeyModifiers.Control):
+                RequestNew(paste: false);
+                break;
+
+            case Key.V when e.KeyModifiers.HasFlag(KeyModifiers.Control):
+                RequestNew(paste: true);
                 break;
         }
     }

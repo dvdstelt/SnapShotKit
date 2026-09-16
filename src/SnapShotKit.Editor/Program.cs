@@ -86,6 +86,17 @@ internal sealed class EditorApp : Application
                     var library = new LibraryWindow();
                     library.Chosen += chosen => new EditorWindow(Snapshot.Open(chosen)).Show();
 
+                    library.NewRequested += paste =>
+                    {
+                        var editor = new EditorWindow(Snapshot.Blank());
+                        editor.Show();
+
+                        if (paste)
+                        {
+                            _ = editor.PasteAsync();
+                        }
+                    };
+
                     desktop.MainWindow = library;
                     base.OnFrameworkInitializationCompleted();
                     return;
