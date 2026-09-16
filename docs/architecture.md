@@ -70,7 +70,7 @@ A `.ssk` file, for SnapShotKit snapshot, is a zip container in the manner of ODF
 ```
 snapshot-01.ssk  (zip)
 ├── document.json     the canvas rectangle, the bands cut out, and the layers: pictures and annotations
-├── original.png      the capture as taken, never modified
+├── original.png      the capture as taken, never modified, and absent from a snapshot started blank
 ├── images/           pictures pasted in, each named after a hash of its bytes, never modified
 └── meta.json         when it was taken, the source screen size, the region within it
 ```
@@ -82,6 +82,10 @@ The canvas is recorded as a rectangle rather than a size, because it is not obli
 Snapshots are numbered, `snapshot-01.ssk` upwards, because they are working documents a person refers to by name. Straight captures that skip the editor are timestamped instead, since nobody refers to those by number.
 
 ## A picture that was not captured here
+
+There are two ways in, depending on where the picture is. One on disk is opened with **Open image**, and becomes a snapshot with that picture as its capture. One on the clipboard goes onto a blank canvas: **New** is an empty canvas, and the first picture pasted onto it decides its size. Ctrl+V with nothing open, or **New from clipboard** in the library, does both at once. New used to take a capture, which Print and the panel menu already do; a second way to do the same thing had left no way at all to start from a picture somebody already had.
+
+A blank snapshot has no capture at all, and is no less a snapshot for it: a document, pictures under `images/`, and no `original.png`. Anything that used to reach for the capture asks instead what an empty canvas measures, which is the capture where there is one and 800 by 600 where there is not. It is not written anywhere until it is saved, so a blank opened and abandoned leaves no empty `untitled.ssk` behind; its name is chosen when it is made, and the first save takes the next free one if another blank has claimed it in the meantime.
 
 A screenshot somebody sent, a diagram exported from something else, a photograph: any of these can be annotated, and none of them arrive as a snapshot. Opening one wraps it in a new `.ssk` beside the captures, and everything after that is the ordinary path. The alternative, an editor that sometimes has a document and sometimes only a picture, would mean every command asking which kind it was looking at; there is one kind of open document, and this is what makes that true.
 
