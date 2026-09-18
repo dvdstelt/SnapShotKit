@@ -268,7 +268,7 @@ public static class SnapshotRenderer
     static void DrawBlur(DrawingContext context, Snapshot snapshot, BlurCache blurs, BlurAnnotation blur, int index,
         Point origin, double scale)
     {
-        var region = new Rect(blur.X, blur.Y, Math.Max(blur.Width, 1), Math.Max(blur.Height, 1));
+        var region = RegionOf(blur);
 
         var destination = new Rect(
             origin.X + region.X * scale,
@@ -281,7 +281,7 @@ public static class SnapshotRenderer
             for (var below = 0; below < index; below++)
             {
                 if (snapshot.Document.Layers[below] is ImageAnnotation image
-                    && region.Intersects(new Rect(image.X, image.Y, image.Width, image.Height))
+                    && Hides(blur, image)
                     && blurs.For(image.Source, blur.Strength) is { } blurred)
                 {
                     DrawPicture(context, blurred, image, origin, scale);
@@ -289,6 +289,16 @@ public static class SnapshotRenderer
             }
         }
     }
+
+    static Rect RegionOf(BlurAnnotation blur) => new(blur.X, blur.Y, Math.Max(blur.Width, 1), Math.Max(blur.Height, 1));
+
+    /// <summary>
+    /// Whether a blur lies over any of a picture beneath it, which is when a blurred copy of that
+    /// picture is drawn. Asked by the cache as well, so that what it holds on to is exactly what is
+    /// drawn from.
+    /// </summary>
+    public static bool Hides(BlurAnnotation blur, ImageAnnotation image) =>
+        RegionOf(blur).Intersects(new Rect(image.X, image.Y, image.Width, image.Height));
 
     static void DrawArrow(DrawingContext context, ArrowAnnotation arrow, Point origin, double scale)
     {

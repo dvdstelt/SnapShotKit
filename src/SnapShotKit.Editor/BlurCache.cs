@@ -26,8 +26,20 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
     /// megabytes for a 4K capture, so an unbounded cache turns a strength slider into a memory leak.
     /// A few is enough for every blur on a typical document, including one laid across a capture
     /// and a picture pasted beside it; a copy evicted early is simply regenerated.
+    ///
+    /// Not a limit on what the document itself needs. A copy some blur is drawn from right now is
+    /// never dropped, however many of those there are: every repaint asks for all of them, so
+    /// dropping one to make room for another would be a full-resolution gaussian inside every
+    /// frame, for as long as the document stayed as it was. This bounds what is left over, which
+    /// is mostly the strengths a slider passed through on its way somewhere else.
     /// </summary>
     const int KeepAtMost = 6;
+
+    /// <summary>
+    /// Pictures that would not decode, so they are not decoded again on every repaint only to fail
+    /// the same way. A picture's bytes never change under the name it is kept by.
+    /// </summary>
+    readonly HashSet<string> undecodable = [];
 
     readonly Dictionary<(string Source, int Strength), Bitmap> cache = [];
 
@@ -39,7 +51,7 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
     /// <returns>Null when there is no such picture, or it would not decode.</returns>
     public Bitmap? For(string source, int strength)
     {
-        var key = (source, Math.Clamp(strength <= 0 ? 45 : strength, 1, 100));
+        var key = (source, Normalised(strength));
 
         if (cache.TryGetValue(key, out var existing))
         {
@@ -48,7 +60,7 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
             return existing;
         }
 
-        if (snapshot.PngOf(source) is not { } png)
+        if (undecodable.Contains(source) || snapshot.PngOf(source) is not { } png)
         {
             return null;
         }
@@ -63,6 +75,7 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
         catch (Exception)
         {
             // The same picture the snapshot could not draw either. Nothing under the blur to hide.
+            undecodable.Add(source);
             return null;
         }
 
@@ -75,15 +88,44 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
             recency.Add(key);
         }
 
-        while (cache.Count > KeepAtMost)
+        if (cache.Count > KeepAtMost)
         {
-            var oldest = recency[0];
-            recency.RemoveAt(0);
-            cache[oldest].Dispose();
-            cache.Remove(oldest);
+            var wanted = Wanted();
+
+            // Stalest first, and only what no blur is drawn from any more.
+            foreach (var stale in recency.Where(stale => !wanted.Contains(stale)).Take(cache.Count - KeepAtMost).ToList())
+            {
+                recency.Remove(stale);
+                cache[stale].Dispose();
+                cache.Remove(stale);
+            }
         }
 
         return cache[key];
+    }
+
+    static int Normalised(int strength) => Math.Clamp(strength <= 0 ? 45 : strength, 1, 100);
+
+    /// <summary>Every copy the document as it stands is drawn from: each blur, and each picture under it.</summary>
+    HashSet<(string Source, int Strength)> Wanted()
+    {
+        var wanted = new HashSet<(string, int)>();
+        var layers = snapshot.Document.Layers;
+
+        for (var index = 0; index < layers.Count; index++)
+        {
+            if (layers[index] is not BlurAnnotation blur)
+            {
+                continue;
+            }
+
+            foreach (var image in layers.Take(index).OfType<ImageAnnotation>().Where(image => SnapshotRenderer.Hides(blur, image)))
+            {
+                wanted.Add((image.Source, Normalised(blur.Strength)));
+            }
+        }
+
+        return wanted;
     }
 
     static WriteableBitmap ToBitmap(Image<Bgra32> image)
