@@ -166,8 +166,10 @@ public sealed class ToolDefaults
 public sealed class CanvasView : Decorator
 {
     // Two-toned: a dark line under a light one. A single hairline is invisible against whatever
-    // the screenshot happens to contain, and a screenshot can contain anything.
-    static readonly IPen SelectionShadow = new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 3);
+    // the screenshot happens to contain, and a screenshot can contain anything. Only just wider
+    // than the line it backs, since what it is for is contrast rather than weight: a heavy outline
+    // reads as part of the annotation, and the annotation is the thing being looked at.
+    static readonly IPen SelectionShadow = new Pen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)), 2);
 
     static readonly IPen SelectionPen = new Pen(new SolidColorBrush(Color.FromArgb(235, 255, 255, 255)), 1)
     {
@@ -206,11 +208,23 @@ public sealed class CanvasView : Decorator
     /// </summary>
     static readonly IBrush Chequerboard = BuildChequerboard();
 
-    const double HandleSize = 8;
-    const double HandleReach = 8;
+    /// <summary>
+    /// How large a handle is drawn, and how far from its centre still counts as grabbing it.
+    ///
+    /// Drawn small and grabbed generously. A handle is a target for the hand and a mark for the eye,
+    /// and those want different sizes: big enough to hit without aiming, small enough not to cover
+    /// the corner of the very thing it is attached to.
+    /// </summary>
+    const double HandleSize = 6;
 
-    /// <summary>How far outside the object the dashed outline sits, so it never traces over the object's own stroke.</summary>
-    const double SelectionOffset = 5;
+    const double HandleReach = 9;
+
+    /// <summary>
+    /// How far outside the object the dashed outline sits, so it never traces over the object's own
+    /// stroke. Close in: far enough that a 2px red box keeps its own edge visible, near enough that
+    /// the outline still reads as belonging to it rather than as a box drawn around it.
+    /// </summary>
+    const double SelectionOffset = 2;
 
     /// <summary>
     /// Explicit zoom never goes past this.
