@@ -253,14 +253,18 @@ public sealed class Snapshot : IDisposable
     }
 
     /// <summary>
-    /// Builds a snapshot around a picture that was not captured here, and writes it to
+    /// Builds a snapshot around a picture that was not captured here, to be saved at
     /// <paramref name="path"/>.
     ///
     /// It goes out through the same writer a save uses, so a snapshot made this way is the same
     /// file in every respect as one the daemon wrote. There is nothing in the format that records
     /// where a picture came from, and there should not be: once it is in, it is a snapshot.
+    ///
+    /// Not written here, because not every picture brought in is kept. One being converted from
+    /// the command line is rendered and done with, and written first, every conversion would leave
+    /// another snapshot in the library that nobody asked for.
     /// </summary>
-    public static Snapshot Create(string path, byte[] originalPng, string? meta)
+    public static Snapshot Wrap(string path, byte[] originalPng, string? meta)
     {
         using var stream = new MemoryStream(originalPng);
         var bitmap = new Bitmap(stream);
@@ -271,9 +275,7 @@ public sealed class Snapshot : IDisposable
             Layers = [CaptureLayer(bitmap.PixelSize)]
         };
 
-        var snapshot = new Snapshot(path, document, originalPng, bitmap, meta, written: false);
-        snapshot.Save();
-        return snapshot;
+        return new Snapshot(path, document, originalPng, bitmap, meta, written: false);
     }
 
     /// <summary>

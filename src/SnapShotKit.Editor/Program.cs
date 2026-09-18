@@ -127,11 +127,15 @@ internal sealed class EditorApp : Application
                 // With" does: it becomes one first. Deciding on the name rather than on the
                 // contents, because the desktop entry advertises exactly these types and a file
                 // called `.ssk` that is really a PNG is a different problem from this one.
-                var opening = ImageImport.Handles(Program.SnapshotPath)
-                    ? ImageImport.Create(Program.SnapshotPath)
-                    : Program.SnapshotPath;
+                //
+                // Only kept when it is going to be edited. One handed over with somewhere to export
+                // to is being converted, and is rendered from memory: written out first, every run
+                // of a script would leave another snapshot in the library.
+                var picture = ImageImport.Handles(Program.SnapshotPath);
 
-                var snapshot = Snapshot.Open(opening);
+                var snapshot = picture && Program.ExportPath is not null
+                    ? ImageImport.Wrap(Program.SnapshotPath)
+                    : Snapshot.Open(picture ? ImageImport.Create(Program.SnapshotPath) : Program.SnapshotPath);
 
                 if (Program.ExportPath is { } exportPath)
                 {

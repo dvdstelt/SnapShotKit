@@ -66,9 +66,23 @@ public static class ImageImport
     /// </summary>
     public static string Create(string imagePath)
     {
-        var full = Path.GetFullPath(imagePath);
-
         Directory.CreateDirectory(SnapShotKitPaths.Snapshots);
+
+        // Disposed straight away: this is the writing of a file, and whoever asked for it opens it
+        // for themselves afterwards. Keeping the decoded picture alive here would be a second copy
+        // of it in native memory for as long as the import was remembered.
+        using var snapshot = Wrap(imagePath);
+        snapshot.Save();
+        return snapshot.Path;
+    }
+
+    /// <summary>
+    /// The image at <paramref name="imagePath"/> as a snapshot that has not been written anywhere,
+    /// which is all an export from the command line wants of it.
+    /// </summary>
+    public static Snapshot Wrap(string imagePath)
+    {
+        var full = Path.GetFullPath(imagePath);
 
         var (png, width, height) = ToPng(full);
         // Named after the file it came from rather than given the next capture number. An imported
@@ -76,11 +90,7 @@ public static class ImageImport
         // "diagram.png" is the connection the numbering would throw away.
         var target = SnapshotLibrary.FreePath(Path.GetFileNameWithoutExtension(full));
 
-        // Disposed straight away: this is the writing of a file, and whoever asked for it opens it
-        // for themselves afterwards. Keeping the decoded picture alive here would be a second copy
-        // of it in native memory for as long as the import was remembered.
-        using var snapshot = Snapshot.Create(target, png, Meta(full, width, height));
-        return target;
+        return Snapshot.Wrap(target, png, Meta(full, width, height));
     }
 
     /// <summary>

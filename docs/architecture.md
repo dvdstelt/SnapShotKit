@@ -89,6 +89,10 @@ A blank snapshot has no capture at all, and is no less a snapshot for it: a docu
 
 A screenshot somebody sent, a diagram exported from something else, a photograph: any of these can be annotated, and none of them arrive as a snapshot. Opening one wraps it in a new `.ssk` beside the captures, and everything after that is the ordinary path. The alternative, an editor that sometimes has a document and sometimes only a picture, would mean every command asking which kind it was looking at; there is one kind of open document, and this is what makes that true.
 
+The one picture that is not kept is one being converted: `snapshotkit-editor picture.jpg --export picture.webp` wraps it in a snapshot in memory, renders that and exits, and nothing is written to the library. It is still a snapshot as far as the export is concerned, which is what keeps that the ordinary path too, but a script run a hundred times should not leave a hundred snapshots nobody will open.
+
+On the way in a JPEG is turned the way its EXIF orientation says, since a PNG is drawn as its pixels lie and the turn has to be made in them once; and an animation or a multi-page file is decoded as its first frame only, because the PNG encoder writes every frame it is handed.
+
 The file the user pointed at is only read. Annotations have nowhere to live inside a PNG, so editing one in place would mean either flattening the drawing into somebody's original or writing a sidecar next to it, and both are things a screenshot tool should not do to a folder it was invited into once.
 
 A PNG keeps its bytes exactly as they were, since it is already in the format the container holds and re-encoding it could only lose a colour profile or a bit depth for nothing. Anything else is decoded and written as PNG once, on the way in, and never again. What decides is what the file turns out to be rather than what it is called: a JPEG named `.png` is common enough, and passing its bytes through unread would leave a JPEG in an entry called `original.png`.
