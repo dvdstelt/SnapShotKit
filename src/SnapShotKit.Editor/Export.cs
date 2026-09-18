@@ -25,9 +25,13 @@ public static class Export
     /// ask for here: the clipboard wants a PNG with its transparency, which is what this writes,
     /// and going the long way round would copy the buffer to gain a setting nobody is offered.
     /// </summary>
-    public static byte[] ToPng(Snapshot snapshot, BlurCache blurs)
+    /// <param name="ground">
+    /// What to flatten onto, for somewhere that has no transparency to show: a printed page is
+    /// white paper, and a picture left transparent comes out of a PDF on black as often as not.
+    /// </param>
+    public static byte[] ToPng(Snapshot snapshot, BlurCache blurs, Avalonia.Media.Color? ground = null)
     {
-        using var rendered = Render(snapshot, blurs);
+        using var rendered = Render(snapshot, blurs, ground);
         using var buffer = new MemoryStream();
 
         rendered.Save(buffer, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
