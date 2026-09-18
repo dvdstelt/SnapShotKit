@@ -909,6 +909,7 @@ public sealed class CanvasView : Decorator
             // Shift lets a corner stretch a picture out of shape, which is the rarer thing to want.
             case ImageAnnotation picture when dragBaseline is ImageAnnotation baseline:
                 Apply(picture, baseline, delta, image, proportional: !e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+                FollowWithCuts(BoundsOf(baseline), BoundsOf(picture));
                 Refit();
                 break;
 
@@ -1061,10 +1062,33 @@ public sealed class CanvasView : Decorator
         }
 
         fitting = true;
+        cutsFrom = CutFollow.Remember(snapshot.Document);
         fitFrom = CanvasRect();
         sessionScale = EffectiveScale;
 
         CanvasResizeStarted?.Invoke();
+    }
+
+    /// <summary>The cuts as they were when the picture drag began, which is what they are placed from for as long as it lasts.</summary>
+    List<CutBand>? cutsFrom;
+
+    /// <summary>
+    /// Takes the cuts across a picture along with it, from <paramref name="then"/> to
+    /// <paramref name="now"/>. See <see cref="CutFollow"/> for why a cut follows when nothing else does.
+    /// </summary>
+    void FollowWithCuts(Rect then, Rect now, List<CutBand>? from = null, bool mirrorColumns = false, bool mirrorRows = false)
+    {
+        from ??= cutsFrom;
+
+        if (from is null || !CutFollow.Apply(snapshot.Document, from, then, now, mirrorColumns, mirrorRows))
+        {
+            return;
+        }
+
+        // A stretched band closes up by a different amount, so the picture as laid out is a
+        // different size and the control is too.
+        snapshot.Recut();
+        InvalidateMeasure();
     }
 
     /// <summary>Puts the canvas wherever the pictures and any size set by hand now say it belongs.</summary>
@@ -1191,6 +1215,10 @@ public sealed class CanvasView : Decorator
             {
                 picture.FlipVertical = !picture.FlipVertical;
             }
+
+            // What was cut out of it is on the other side now, and so is the band.
+            var bounds = BoundsOf(picture);
+            FollowWithCuts(bounds, bounds, CutFollow.Remember(snapshot.Document), mirrorColumns: horizontally, mirrorRows: !horizontally);
         });
     }
 
@@ -1214,8 +1242,12 @@ public sealed class CanvasView : Decorator
 
         BeforeChange?.Invoke();
 
+        var then = BoundsOf(picture);
+        var cuts = CutFollow.Remember(snapshot.Document);
+
         picture.Width = bitmap.PixelSize.Width;
         picture.Height = bitmap.PixelSize.Height;
+        FollowWithCuts(then, BoundsOf(picture), cuts);
         Refit();
 
         Changed?.Invoke();
@@ -1238,6 +1270,7 @@ public sealed class CanvasView : Decorator
         }
 
         fitting = false;
+        cutsFrom = null;
         sessionScale = 0;
 
         CanvasResizeEnded?.Invoke();
