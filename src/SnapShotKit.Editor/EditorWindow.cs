@@ -551,8 +551,9 @@ public sealed class EditorWindow : Window
     /// <summary>
     /// The File menu.
     ///
-    /// Taking a capture, opening one and closing the window make sense with an empty editor.
-    /// Saving, exporting and copying do not, and are left out rather than listed and refused.
+    /// Starting a canvas, opening one and closing the window make sense with an empty editor.
+    /// Saving, exporting, copying and printing do not, and are left out rather than listed and
+    /// refused.
     /// </summary>
     IReadOnlyList<MenuEntry> FileMenu()
     {
@@ -573,6 +574,7 @@ public sealed class EditorWindow : Window
                 MenuEntry.Separator,
                 MenuEntry.Item("Export…", "Ctrl+E", () => _ = ExportAsync()),
                 MenuEntry.Item("Copy to clipboard", "Ctrl+C", CopyToClipboard),
+                MenuEntry.Item("Print…", "Ctrl+P", () => _ = PrintAsync()),
                 MenuEntry.Separator
             ]);
         }
@@ -1186,6 +1188,76 @@ public sealed class EditorWindow : Window
         catch (Exception exception)
         {
             Report($"Could not save: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Asks how the page should look, then prints it, or writes it out as a PDF.
+    ///
+    /// Rendered once, before the dialog opens, and that same picture is what the dialog shows on
+    /// its sheet and what goes to the printer: what was seen is what comes out. Flattened onto
+    /// white, because paper is, and a transparent margin would otherwise be left to the PDF reader
+    /// or the printer to fill with whatever it thinks nothing looks like.
+    ///
+    /// The settings are remembered as soon as they are chosen, the same as an export's, so a job
+    /// the printer refuses does not also lose the paper and the margins just set.
+    /// </summary>
+    async Task PrintAsync()
+    {
+        if (snapshot is null || canvas is null || blurs is null)
+        {
+            return;
+        }
+
+        canvas.CommitEdit();
+
+        var png = Export.ToPng(snapshot, blurs, Colors.White);
+        var title = Path.GetFileNameWithoutExtension(snapshot.Path);
+
+        PrintRequest? request;
+
+        using (var stream = new MemoryStream(png))
+        using (var picture = new Avalonia.Media.Imaging.Bitmap(stream))
+        {
+            request = await PrintDialog.AskAsync(this, state.Print, picture);
+        }
+
+        if (request is null)
+        {
+            return;
+        }
+
+        state.RememberPrint(request.Settings);
+
+        try
+        {
+            var pdf = Printing.ToPdf(png, request.Layout, title);
+
+            if (request.Printer is { } printer)
+            {
+                await Printing.SendAsync(pdf, printer, request.Copies, request.Settings, title);
+                Report(request.Copies == 1 ? $"Sent to {printer}" : $"Sent {request.Copies} copies to {printer}");
+                return;
+            }
+
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save the page as PDF",
+                SuggestedFileName = title + ".pdf",
+                DefaultExtension = "pdf",
+                SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(SnapShotKitPaths.Exports),
+                FileTypeChoices = [new FilePickerFileType("PDF") { Patterns = ["*.pdf"] }]
+            });
+
+            if (file?.TryGetLocalPath() is { } path)
+            {
+                await File.WriteAllBytesAsync(path, pdf);
+                Report($"Saved {Path.GetFileName(path)}");
+            }
+        }
+        catch (Exception exception)
+        {
+            Report($"Printing failed: {exception.Message}");
         }
     }
 
@@ -1842,6 +1914,10 @@ public sealed class EditorWindow : Window
 
                 case Key.E:
                     _ = ExportAsync();
+                    return;
+
+                case Key.P:
+                    _ = PrintAsync();
                     return;
 
                 case Key.C:

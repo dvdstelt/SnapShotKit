@@ -37,6 +37,13 @@ public sealed class EditorState
     /// </summary>
     public ExportSettings Export { get; set; } = new();
 
+    /// <summary>
+    /// How the last page was set up for printing: the printer, the paper, which way up, the margins.
+    /// Those belong to the printer on the desk rather than to any one picture, so they are the same
+    /// next time.
+    /// </summary>
+    public PrintSettings Print { get; set; } = new();
+
     /// <summary>Reads what was remembered, or hands back the defaults when there is nothing to read.</summary>
     public static EditorState Load()
     {
@@ -52,6 +59,13 @@ public sealed class EditorState
             // Starting fresh is the same outcome as a first run, which is not a failure.
             return new EditorState();
         }
+    }
+
+    /// <summary>Records how a page was set up for printing, and writes it out.</summary>
+    public void RememberPrint(PrintSettings settings)
+    {
+        Print = settings;
+        Save();
     }
 
     /// <summary>Records how an export was written, and writes it out.</summary>
