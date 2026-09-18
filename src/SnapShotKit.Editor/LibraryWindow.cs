@@ -335,8 +335,11 @@ public sealed class LibraryWindow : Window
         try
         {
             var path = ImageImport.Create(picked);
-            Refresh();
+
+            // Closed afterwards, the way a tile closes it, and for the same reason: the library is shown over
+            // the editor it belongs to, and left open it sits on top of the picture just opened.
             Chosen?.Invoke(path);
+            Close();
         }
         catch (Exception exception)
         {
