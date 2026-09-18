@@ -38,7 +38,6 @@ public sealed class Snapshot : IDisposable
     {
         Path = path;
         Document = document;
-        OriginalPng = originalPng;
         Bitmap = bitmap;
         Meta = meta;
         OriginFolder = FolderOf(meta);
@@ -74,9 +73,6 @@ public sealed class Snapshot : IDisposable
     public string Path { get; private set; }
 
     public SnapshotDocument Document { get; }
-
-    /// <summary>The capture's bytes as taken, or null for a blank snapshot, which has no capture.</summary>
-    public byte[]? OriginalPng { get; }
 
     /// <summary>
     /// The capture, decoded, or null for a blank snapshot. Wherever its layer has been moved to, this
@@ -383,17 +379,13 @@ public sealed class Snapshot : IDisposable
                 WriteText(archive, "meta.json", Meta);
             }
 
-            if (OriginalPng is not null)
-            {
-                WriteBytes(archive, ImageAnnotation.Capture, OriginalPng);
-            }
-
             // Only the pictures something still stands on. One pasted and then deleted is kept in
             // memory for the undo history's sake, but a saved document has no history to want it.
+            // The capture is no exception: somebody who deleted it, quite possibly because of what
+            // was in it, is not expecting to hand it over inside the file anyway.
             var used = Document.Layers
                 .OfType<ImageAnnotation>()
                 .Select(image => image.Source)
-                .Where(source => source != ImageAnnotation.Capture)
                 .Distinct(StringComparer.Ordinal);
 
             foreach (var source in used)

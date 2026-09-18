@@ -70,7 +70,7 @@ A `.ssk` file, for SnapShotKit snapshot, is a zip container in the manner of ODF
 ```
 snapshot-01.ssk  (zip)
 ├── document.json     the canvas rectangle, the bands cut out, and the layers: pictures and annotations
-├── original.png      the capture as taken, never modified, and absent from a snapshot started blank
+├── original.png      the capture as taken, never modified, and absent once deleted or from a snapshot started blank
 ├── images/           pictures pasted in, each named after a hash of its bytes, never modified
 └── meta.json         when it was taken, the source screen size, the region within it
 ```
@@ -145,7 +145,7 @@ Annotations that are defined by a rectangle share a `RectAnnotation` base, so th
 
 The capture is a layer. It used to be a backdrop painted before everything else, which made it the one thing on the canvas nothing could touch, and pasting a second picture beside it would then have given two kinds of picture that behaved differently. Now the capture and anything pasted are the same kind of layer: a rectangle saying where the picture stands and how large it is, which way round it faces, and the entry in the snapshot holding its pixels. The pixels are never touched, so a picture shrunk today can be put back to its actual size next week. A document from before this has its capture given a layer at the bottom of the stack, at the origin and at its own size, which is exactly where it was always drawn.
 
-Ctrl+V pastes the picture on the clipboard, read through wl-paste so a PNG arrives as the bytes that were offered. A file copied in the file manager is on the clipboard as a path rather than pixels, and pastes as the picture it names. A pasted picture is stored under `images/` named after a hash of its bytes, so the same picture pasted twice is kept once, and a save writes only the pictures some layer still uses. Every picture pasted in a session is kept in memory until the document closes, because undo holds layers rather than pixels and an undone delete has to find its picture again.
+Ctrl+V pastes the picture on the clipboard, read through wl-paste so a PNG arrives as the bytes that were offered. A file copied in the file manager is on the clipboard as a path rather than pixels, and pastes as the picture it names. A pasted picture is stored under `images/` named after a hash of its bytes, so the same picture pasted twice is kept once, and a save writes only the pictures some layer still uses. That goes for the capture as well: deleted, it is left out of the file like any other picture, because somebody who deleted a capture for what was in it is not expecting to hand it over inside the `.ssk` anyway. Every picture pasted in a session is kept in memory until the document closes, because undo holds layers rather than pixels and an undone delete has to find its picture again.
 
 Pictures are picked up with the select tool and only with it. With a drawing tool in hand the whole of the capture answering to a press would turn every arrow into a dragged screenshot. A corner keeps the proportions and shift lets it stretch; everything lands on whole pixels, because a picture placed between them is resampled and a resampled screenshot has soft text.
 
