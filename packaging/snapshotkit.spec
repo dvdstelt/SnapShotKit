@@ -44,6 +44,9 @@ Requires:       xdg-desktop-portal
 Requires:       wl-clipboard
 
 Recommends:     xdg-desktop-portal-gnome
+# Printing hands a finished page to CUPS through lp and asks lpstat what printers there are.
+# Without them the print dialog still opens, and can only save the page as a PDF.
+Recommends:     cups-client
 Recommends:     gnome-shell
 
 %description

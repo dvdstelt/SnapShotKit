@@ -8,6 +8,8 @@ The result opens in an editor for arrows, boxes, blur, text and numbered markers
 
 Annotations are kept as objects alongside the untouched capture, so anything drawn can be moved, restyled or removed next week, and the picture underneath is never modified. Exporting to PNG, JPEG or WebP renders the document rather than being the document, and asks first: transparency kept or flattened, WebP lossless or lossy and how hard to compress, JPEG quality, and whether the file lands in the exports folder or beside the picture it came from.
 
+Printing (Ctrl+P) shows the sheet of paper with the picture on it. The picture can be dragged to where it is wanted, pulled to the middle, sized from a corner or to an exact width in millimetres, or fitted to the page width, on A3 to Legal, upright or on its side, in as many copies as needed. It prints through CUPS, or saves the same page as a PDF.
+
 An image that was never captured here can be annotated too. Open one from the File menu, or right-click it in the file manager and open it with SnapShotKit, and it is wrapped in a snapshot of its own; the file you pointed at is only read.
 
 Target platform is Fedora on GNOME Wayland.
