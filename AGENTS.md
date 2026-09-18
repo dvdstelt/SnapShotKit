@@ -44,7 +44,7 @@ The editor opens a snapshot, and can render one without a window:
 ./src/SnapShotKit.Editor/bin/Debug/net10.0/snapshotkit-editor snapshot-01.ssk --export out.png
 ```
 
-Given a picture rather than a snapshot it wraps it in one first, which is the same path the file manager's "Open With" takes. That writes a `.ssk` into the library, `--export` included, so redirect `XDG_DATA_HOME` when trying it rather than filling your own snapshots folder:
+Given a picture rather than a snapshot it wraps it in one first, which is the same path the file manager's "Open With" takes. That writes a `.ssk` into the library the first time a given file is opened, though not for `--export`, which renders from memory. Redirect `XDG_DATA_HOME` when trying it rather than filling your own snapshots folder:
 
 ```bash
 XDG_DATA_HOME=/tmp/try ./src/SnapShotKit.Editor/bin/Debug/net10.0/snapshotkit-editor diagram.png
