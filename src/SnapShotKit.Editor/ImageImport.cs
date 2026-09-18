@@ -2,7 +2,9 @@ using System.Text.Json;
 using Avalonia.Platform.Storage;
 using SnapShotKit.Contracts;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Processing;
 
 namespace SnapShotKit.Editor;
 
@@ -113,8 +115,16 @@ public static class ImageImport
         source.Position = 0;
 
         // An animated GIF or a multi-page TIFF comes in as its first frame. A snapshot is one
-        // picture, and the first frame is the one the file manager showed as the thumbnail.
-        using var image = Image.Load(source);
+        // picture, and the first frame is the one the file manager showed as the thumbnail. The
+        // decoder has to be told, because the PNG encoder writes every frame it is handed, as an
+        // animated PNG, and two hundred frames would then ride along in the file for good.
+        using var image = Image.Load(new DecoderOptions { MaxFrames = 1 }, source);
+
+        // A camera writes the pixels the way the sensor lay and records which way up it was held.
+        // Everything that showed this picture before now turned it accordingly, and a PNG drawn
+        // here is drawn as its pixels lie, so the turn is made once, in the pixels, on the way in.
+        image.Mutate(turn => turn.AutoOrient());
+
         using var buffer = new MemoryStream();
 
         image.SaveAsPng(buffer, new PngEncoder());
