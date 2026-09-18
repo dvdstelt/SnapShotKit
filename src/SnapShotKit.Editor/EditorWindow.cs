@@ -1284,6 +1284,16 @@ public sealed class EditorWindow : Window
     }
 
     /// <summary>
+    /// Whether the file at <paramref name="path"/> is the snapshot on the canvas.
+    ///
+    /// A blank canvas that has never been saved is no file at all, whatever its path says. The name
+    /// it was given is only a suggestion until the first save, and another window may have saved
+    /// under it since: taking that file for this canvas would copy the wrong picture, refuse to
+    /// open the right one, and delete somebody's saved work along with a canvas it never was.
+    /// </summary>
+    bool IsOpen(string path) => snapshot is { OnDisk: true } && string.Equals(path, snapshot.Path, StringComparison.Ordinal);
+
+    /// <summary>
     /// Copies a capture the strip was asked about.
     ///
     /// The one on the canvas is copied as it stands, unsaved changes and all, because that is what
@@ -1292,7 +1302,7 @@ public sealed class EditorWindow : Window
     /// </summary>
     void CopySnapshot(string path)
     {
-        if (snapshot is not null && string.Equals(path, snapshot.Path, StringComparison.Ordinal))
+        if (IsOpen(path))
         {
             CopyToClipboard();
             return;
@@ -1335,7 +1345,7 @@ public sealed class EditorWindow : Window
     async Task DeleteSnapshotAsync(string path, bool answered)
     {
         var name = Path.GetFileName(path);
-        var onCanvas = snapshot is not null && string.Equals(path, snapshot.Path, StringComparison.Ordinal);
+        var onCanvas = IsOpen(path);
 
         // Deleting a capture is not undoable, so it gets a question. The wording says what will be
         // gone rather than asking whether the user is sure.
@@ -1547,7 +1557,7 @@ public sealed class EditorWindow : Window
         var note = openedNote;
         openedNote = null;
 
-        if (snapshot is not null && string.Equals(path, snapshot.Path, StringComparison.Ordinal))
+        if (IsOpen(path))
         {
             return;
         }
@@ -1627,7 +1637,7 @@ public sealed class EditorWindow : Window
         thumbnailWork = new CancellationTokenSource();
 
         var entries = SnapshotLibrary.List().Take(RecentCount).ToList();
-        recent.Show(SnapshotItem.Build(entries, thumbnails, thumbnailWork.Token), snapshot?.Path ?? string.Empty);
+        recent.Show(SnapshotItem.Build(entries, thumbnails, thumbnailWork.Token), snapshot is { OnDisk: true } ? snapshot.Path : string.Empty);
     }
 
     /// <summary>Points the tools, the sidebar, the menu bar and the status line at whatever is true now.</summary>

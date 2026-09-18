@@ -57,6 +57,9 @@ public sealed class Snapshot : IDisposable
     /// </summary>
     bool written;
 
+    /// <summary>Whether <see cref="Path"/> names a file this snapshot is in, rather than one it has yet to be saved as.</summary>
+    public bool OnDisk => written;
+
     /// <summary>A picture's bytes as they arrived, and the decoded bitmap drawn from them, which is null when they would not decode.</summary>
     sealed record Picture(byte[] Png, Bitmap? Bitmap);
 
