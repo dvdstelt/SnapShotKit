@@ -1023,8 +1023,14 @@ public sealed class CanvasView : Decorator
 
             var factor = Math.Max(Math.Abs(x - anchorX) / baseline.Width, Math.Abs(y - anchorY) / baseline.Height);
 
-            var width = Math.Max(Math.Round(baseline.Width * factor), MinimumPicture);
-            var height = Math.Max(Math.Round(baseline.Height * factor), MinimumPicture);
+            // Stopped where the shorter side reaches the least a picture may be, rather than each
+            // side being stopped there on its own. Held separately, a wide strip dragged small
+            // keeps narrowing after its height has stopped, and what is let go of is a square
+            // that the next drag then takes for the picture's proportions.
+            factor = Math.Max(factor, Math.Min(1, MinimumPicture / Math.Min(baseline.Width, baseline.Height)));
+
+            var width = Math.Round(baseline.Width * factor);
+            var height = Math.Round(baseline.Height * factor);
 
             left = x < anchorX ? anchorX - width : anchorX;
             right = left + width;
@@ -1032,10 +1038,19 @@ public sealed class CanvasView : Decorator
             bottom = top + height;
         }
 
-        picture.X = Math.Min(left, right);
-        picture.Y = Math.Min(top, bottom);
-        picture.Width = Math.Max(Math.Abs(right - left), MinimumPicture);
-        picture.Height = Math.Max(Math.Abs(bottom - top), MinimumPicture);
+        // Measured from the edge that stays put, so the least a picture may be is taken up on the
+        // pointer's side of it. Taken from whichever edge is further left or up instead, a handle
+        // brought to within a few pixels of the edge opposite pushes that edge outwards, and the
+        // canvas, which follows the pictures, grows with it in the middle of the drag.
+        (picture.X, picture.Width) = Span(MovesLeft(dragging) ? right : left, MovesLeft(dragging) ? left : right);
+        (picture.Y, picture.Height) = Span(MovesTop(dragging) ? bottom : top, MovesTop(dragging) ? top : bottom);
+    }
+
+    /// <summary>One axis of a picture: from the edge that is held to the one being dragged, and never less than a picture may be.</summary>
+    static (double Start, double Size) Span(double held, double dragged)
+    {
+        var size = Math.Max(Math.Abs(dragged - held), MinimumPicture);
+        return (dragged < held ? held - size : held, size);
     }
 
     static Rect BoundsOf(RectAnnotation rect) => new(rect.X, rect.Y, rect.Width, rect.Height);
