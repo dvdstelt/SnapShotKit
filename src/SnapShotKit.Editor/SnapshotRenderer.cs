@@ -108,7 +108,7 @@ public static class SnapshotRenderer
                     break;
 
                 default:
-                    DrawAnnotation(context, annotation, blurs, origin, scale);
+                    DrawAnnotation(context, annotation, origin, scale);
                     break;
             }
         }
@@ -152,14 +152,12 @@ public static class SnapshotRenderer
     ///
     /// Public so that the band's style previews go through it too: a preview drawn by any other
     /// code would eventually stop looking like the thing it promises.
+    ///
+    /// Not a blur and not a picture. Both depend on the document around them, what is under the
+    /// blur and which picture a layer names, so the document's own pass draws those, and a preview
+    /// has neither.
     /// </summary>
-    /// <param name="blurs">
-    /// Unused by anything this draws. A blur and a picture both depend on the document around them,
-    /// what is under the blur and which picture a layer names, so the document's own pass draws
-    /// those, and a preview has neither.
-    /// </param>
-    public static void DrawAnnotation(DrawingContext context, Annotation annotation, BlurCache? blurs,
-        Point origin, double scale)
+    public static void DrawAnnotation(DrawingContext context, Annotation annotation, Point origin, double scale)
     {
         switch (annotation)
         {

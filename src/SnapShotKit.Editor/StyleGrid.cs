@@ -43,7 +43,7 @@ public sealed class StylePreview : Control
             origin = new Point((Bounds.Width - measured.Width) / 2, (Bounds.Height - measured.Height) / 2);
         }
 
-        SnapshotRenderer.DrawAnnotation(context, sample, null, origin, scale);
+        SnapshotRenderer.DrawAnnotation(context, sample, origin, scale);
     }
 }
 

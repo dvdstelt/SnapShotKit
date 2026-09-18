@@ -362,14 +362,6 @@ public sealed class ToolBand : Border
 
     public EditorTool Active { get; private set; } = EditorTool.Arrow;
 
-    static Control Rule() => new Border
-    {
-        Width = 1,
-        Height = 26,
-        Background = Tokens.DividerBrush,
-        VerticalAlignment = VerticalAlignment.Center
-    };
-
     /// <summary>A part of the sidebar: a heading over a hairline, and what it heads.</summary>
     static Control Section(string heading, Control content) => new StackPanel
     {
