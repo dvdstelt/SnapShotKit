@@ -2,9 +2,7 @@
 
 Copyright 2026 Dennis van der Stelt. All rights reserved.
 
-This is not an open source licence, and it is not trying to look like one. The source is
-published so that you can read it, audit it, build it, learn from it and improve it. It is not
-published so that somebody else can ship their own SnapShotKit.
+This is not an open source licence, and it is not trying to look like one. The source is published so that you can read it, audit it, build it, learn from it and improve it. It is not published so that somebody else can ship their own SnapShotKit.
 
 Everything below is meant to be read by the person it applies to, so it is written to be read.
 
@@ -16,16 +14,14 @@ a. Read the source, in whole or in part, for any purpose.
 b. Build the software from source, and run what you have built.
 c. Run the software, for personal or commercial purposes, subject to section 2.
 d. Modify the source and run your modified version, for your own use.
-e. Copy the repository on a code hosting service for the purpose of preparing a contribution
-   back to the project. On GitHub this is called forking, and it is how a pull request is made.
+e. Copy the repository on a code hosting service for the purpose of preparing a contribution back to the project. On GitHub this is called forking, and it is how a pull request is made.
 f. Quote the source in reviews, articles, teaching material and bug reports.
 
 ## 2. What it costs
 
 Versions before 1.0.0 may be used free of charge.
 
-From version 1.0.0 onwards, running the software requires a licence purchased from the copyright
-holder, with these exceptions, which are free of charge and perpetual:
+From version 1.0.0 onwards, running the software requires a licence purchased from the copyright holder, with these exceptions, which are free of charge and perpetual:
 
 a. Anyone whose contribution has been merged into the project.
 b. Anyone the copyright holder has told in writing that they need not pay.
@@ -36,54 +32,36 @@ A purchased licence covers one person and every machine that person uses.
 
 You may not:
 
-a. Distribute, publish, sell, rent, lease, sublicense or otherwise make the software available
-   to anyone else, in source or in compiled form, modified or unmodified. Building it for
-   yourself is fine. Handing the result to somebody else is not.
-b. Package the software for a distribution, an app store, a container image or any other
-   redistribution channel.
+a. Distribute, publish, sell, rent, lease, sublicense or otherwise make the software available to anyone else, in source or in compiled form, modified or unmodified. Building it for yourself is fine. Handing the result to somebody else is not.
+b. Package the software for a distribution, an app store, a container image or any other redistribution channel.
 c. Offer the software to third parties as a hosted or managed service.
 d. Remove or alter any copyright, licence or attribution notice.
 e. Use the name SnapShotKit, or any confusingly similar name, for a modified version.
 
-Section 1e is the one exception to 3a: a copy on a code hosting service, made in order to
-contribute, is allowed. Publishing builds from it is not.
+Section 1e is the one exception to 3a: a copy on a code hosting service, made in order to contribute, is allowed. Publishing builds from it is not.
 
 ## 4. Contributions
 
-Contributions are welcome, and are governed by CONTRIBUTING.md in this repository. In short: you
-keep the copyright in what you write, and you grant the copyright holder a licence broad enough
-to ship it and to relicense the project later. That grant is what makes it possible to publish
-the source at all, and a contribution cannot be merged without it.
+Contributions are welcome, and are governed by CONTRIBUTING.md in this repository. In short: you keep the copyright in what you write, and you grant the copyright holder a licence broad enough to ship it and to relicense the project later. That grant is what makes it possible to publish the source at all, and a contribution cannot be merged without it.
 
 ## 5. Other people's code
 
-The bundled Barlow and Barlow Condensed fonts are under the SIL Open Font License, which travels
-with them in `src/SnapShotKit.Ui/Assets/Fonts/OFL.txt` and is unaffected by this licence.
-Third-party libraries carry their own licences, which likewise are unaffected by this one.
+The bundled Barlow and Barlow Condensed fonts are under the SIL Open Font License, which travels with them in `src/SnapShotKit.Ui/Assets/Fonts/OFL.txt` and is unaffected by this licence. Third-party libraries carry their own licences, which likewise are unaffected by this one.
 
 ## 6. If you break this licence
 
-Your rights under this licence end automatically if you breach it. They come back the first time
-the copyright holder says so in writing, and not before. Nothing here limits any remedy available
-under copyright law.
+Your rights under this licence end automatically if you breach it. They come back the first time the copyright holder says so in writing, and not before. Nothing here limits any remedy available under copyright law.
 
 ## 7. No warranty, and no liability
 
-The software is provided as is, without warranty of any kind, express or implied, including but
-not limited to the warranties of merchantability, fitness for a particular purpose and
-non-infringement.
+The software is provided as is, without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose and non-infringement.
 
-To the fullest extent permitted by law, the copyright holder is not liable for any claim, damage,
-loss or other liability, whether in contract, tort or otherwise, arising from the software or
-from its use. It takes screenshots. Please do not run anything important on the strength of it.
+To the fullest extent permitted by law, the copyright holder is not liable for any claim, damage, loss or other liability, whether in contract, tort or otherwise, arising from the software or from its use. It takes screenshots. Please do not run anything important on the strength of it.
 
 ## 8. Which law
 
-This licence is governed by the law of the Netherlands. Any dispute goes to the competent court
-in the Netherlands.
+This licence is governed by the law of the Netherlands. Any dispute goes to the competent court in the Netherlands.
 
 ## 9. Earlier versions
 
-Version 0.1.0 was released under the GNU General Public License, version 3 or later. That release
-remains available under those terms, which this licence does not and cannot retract. Everything
-from 0.2.0 onwards is covered by this licence.
+Version 0.1.0 was released under the GNU General Public License, version 3 or later. That release remains available under those terms, which this licence does not and cannot retract. Everything from 0.2.0 onwards is covered by this licence.
