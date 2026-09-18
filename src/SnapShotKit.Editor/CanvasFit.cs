@@ -16,8 +16,12 @@ namespace SnapShotKit.Editor;
 /// past it. The pictures are measured against where each one stood when the canvas was set rather
 /// than against the canvas alone. That is what lets a crop survive: a canvas pulled in over the
 /// capture has the capture reaching past it on purpose, and nudging the capture a few pixels is not
-/// a change of mind about the crop. A picture that was not there when the canvas was set has no
-/// such standing, and the canvas grows to take in whatever of it falls outside.
+/// a change of mind about the crop. So an edge a picture already reached past when the canvas was
+/// set is an edge that picture never moves: it was cropped there, and reaching further past is
+/// still being cropped there. Growing by however much further it reached would bring back, a
+/// pixel for every pixel dragged, the very part the crop had taken off. A picture that was not
+/// there when the canvas was set has no such standing, and the canvas grows to take in whatever
+/// of it falls outside.
 /// </summary>
 public static class CanvasFit
 {
@@ -50,10 +54,12 @@ public static class CanvasFit
                 ? new Rect(stood.X, stood.Y, stood.Width, stood.Height)
                 : new Rect(left, top, right - left, bottom - top);
 
-            pastLeft = Math.Max(pastLeft, Math.Min(left, then.Left) - now.Left);
-            pastTop = Math.Max(pastTop, Math.Min(top, then.Top) - now.Top);
-            pastRight = Math.Max(pastRight, now.Right - Math.Max(right, then.Right));
-            pastBottom = Math.Max(pastBottom, now.Bottom - Math.Max(bottom, then.Bottom));
+            // Only over an edge it stood inside of. One it already reached past is where it was
+            // cropped, and stays where it was set however much further the picture goes.
+            pastLeft = Math.Max(pastLeft, then.Left < left ? 0 : left - now.Left);
+            pastTop = Math.Max(pastTop, then.Top < top ? 0 : top - now.Top);
+            pastRight = Math.Max(pastRight, then.Right > right ? 0 : now.Right - right);
+            pastBottom = Math.Max(pastBottom, then.Bottom > bottom ? 0 : now.Bottom - bottom);
         }
 
         return Whole(left - pastLeft, top - pastTop, right + pastRight, bottom + pastBottom);
