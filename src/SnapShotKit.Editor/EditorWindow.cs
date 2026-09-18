@@ -1009,6 +1009,13 @@ public sealed class EditorWindow : Window
     ///
     /// The layer list is the stacking order, so this is a move within it. Drawing something puts it
     /// on top, which is right almost always and wrong often enough to need a way out.
+    ///
+    /// Nothing drawn goes underneath every picture. The capture used to be a backdrop that "back"
+    /// could never get behind, and now that it is a layer the bottom of the list is below it: an
+    /// arrow sent there is an arrow nobody sees again, and a blur sent there has no picture under
+    /// it left to blur, so what it was hiding comes out in the export as plain as it was taken.
+    /// Between two pictures is still somewhere to be, which is how a blur hides one and not the
+    /// other.
     /// </summary>
     void Arrange(Order order)
     {
@@ -1033,19 +1040,51 @@ public sealed class EditorWindow : Window
             _ => Math.Max(at - 1, 0)
         };
 
-        if (at < 0 || at == to)
+        if (at < 0)
+        {
+            return;
+        }
+
+        var arranged = layers.ToList();
+        arranged.RemoveAt(at);
+        arranged.Insert(to, target);
+        KeepPicturesUnderneath(arranged);
+
+        if (arranged.SequenceEqual(layers))
         {
             return;
         }
 
         Record();
 
-        layers.RemoveAt(at);
-        layers.Insert(to, target);
+        layers.Clear();
+        layers.AddRange(arranged);
 
         dirty = true;
         canvas.InvalidateVisual();
         UpdateChrome();
+    }
+
+    /// <summary>
+    /// Lifts whatever has ended up below every picture to just above the lowest one, in the order
+    /// it was in.
+    ///
+    /// Done to the order a move comes to rather than to where the move may go, because a picture
+    /// raised off the bottom strands what was above it just as surely as an arrow sent to the back
+    /// strands itself.
+    /// </summary>
+    static void KeepPicturesUnderneath(List<Annotation> layers)
+    {
+        var lowest = layers.FindIndex(layer => layer is ImageAnnotation);
+
+        if (lowest <= 0)
+        {
+            return;
+        }
+
+        var stranded = layers.GetRange(0, lowest);
+        layers.RemoveRange(0, lowest);
+        layers.InsertRange(1, stranded);
     }
 
     void Undo() => Step(undo, redo);

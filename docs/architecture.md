@@ -157,6 +157,8 @@ A document from before this whose canvas is not exactly its capture had been cro
 
 Nothing else is positioned against a picture. Coordinates are measured from where the capture's corner was when it was taken, and they stay measured from there when the capture moves, so moving or resizing a picture leaves every arrow, text and blur exactly where it was drawn. That keeps moving a picture the same cheap, predictable operation as moving anything else, at a cost worth knowing: a blur laid over something private hides whatever is under it now, not what was under it when it was drawn.
 
+The stacking order has one floor: nothing drawn goes underneath every picture. While the capture was a backdrop, "send to back" could not get behind it, and now the bottom of the layer list is below it. An arrow sent there would never be seen again, and a blur sent there would have no picture under it left to blur, so the export would show what it was hiding. Whatever a move would leave below the lowest picture is lifted to just above it instead. Between two pictures is still a place to be, which is how a blur hides one picture and not the one pasted over it.
+
 ## Resizing the canvas
 
 It is reached from the canvas size along the foot of the window, beside the zoom, rather than from a button among the tools. Resizing draws nothing; it changes the document rather than what stands on it, and in a row of drawing tools it was the one that was not one. The size is worth having on screen anyway, since it is what the file will come out as, and it says "fixed" when it was set by hand, because a canvas that has stopped shrinking to the pictures looks exactly like one that never needed to. C still opens it, and so does the Edit menu.
