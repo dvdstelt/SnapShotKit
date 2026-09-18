@@ -6,7 +6,7 @@ using Tmds.DBus.Protocol;
 namespace SnapShotKit.Daemon;
 
 /// <summary>Exposes the daemon on the session bus. This is the only way in.</summary>
-public sealed class DaemonService(CaptureEngine engine) : IPathMethodHandler
+public sealed class DaemonService(CaptureEngine engine, DBusConnection connection) : IPathMethodHandler
 {
     // One capture at a time. The helper writes every frame into the same shared file, so starting a
     // second capture while an overlay is still open would change the picture under the user.
@@ -111,8 +111,10 @@ public sealed class DaemonService(CaptureEngine engine) : IPathMethodHandler
 
                 if (withOverlay)
                 {
+                    var windows = await ShellWindows.InFrameAsync(connection, capture.Width, capture.Height, context.RequestAborted);
+
                     var answer = await OverlayClient.AskAsync(CaptureEngine.FramePath,
-                        capture.Width, capture.Height, capture.Stride, context.RequestAborted);
+                        capture.Width, capture.Height, capture.Stride, windows, context.RequestAborted);
 
                     if (answer.Choice == OverlayChoice.Cancelled)
                     {

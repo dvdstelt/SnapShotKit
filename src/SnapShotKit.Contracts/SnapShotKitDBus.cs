@@ -19,6 +19,15 @@ public static class SnapShotKitDBus
 
     /// <summary>Open the snapshots folder in the file manager.</summary>
     public const string OpenSnapshots = "OpenSnapshots";
+
+    // The other direction: what the daemon asks of the shell extension. The extension has no bus
+    // name of its own, since it lives inside the shell and answers on the shell's connection.
+    public const string ShellService = "org.gnome.Shell";
+    public const string ShellObjectPath = "/org/snapshotkit/Shell";
+    public const string ShellInterface = "org.snapshotkit.Shell";
+
+    /// <summary>Where the windows and the monitors are, in the shell's own pixels: `a(iiii)` twice, windows topmost first, primary monitor first.</summary>
+    public const string ShellWindows = "Windows";
 }
 
 /// <summary>Which capture path the daemon is actually using. Surfaced by Status so a silent fall back to the slow path is visible.</summary>

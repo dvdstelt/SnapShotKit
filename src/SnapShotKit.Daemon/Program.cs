@@ -30,7 +30,7 @@ catch (Exception exception)
 // activation the call that started us arrives the instant it appears. Claiming it before the
 // handler exists loses exactly that call, which is the first capture after a login: the one
 // gesture that has to work.
-connection.AddMethodHandler(new DaemonService(engine));
+connection.AddMethodHandler(new DaemonService(engine, connection));
 
 // Whoever takes the name owns the session. A second daemon exits here rather than racing for the
 // PipeWire session and leaving two consent dialogs behind.

@@ -27,8 +27,9 @@ public readonly record struct OverlayResult(OverlayChoice Choice, CaptureRegion 
 /// </summary>
 public static class OverlayClient
 {
+    /// <param name="windows">The windows in the frame, topmost first, for the overlay to offer as ready-made regions.</param>
     public static async Task<OverlayResult> AskAsync(string framePath, int width, int height, int stride,
-        CancellationToken cancellationToken = default)
+        IReadOnlyList<CaptureRegion> windows, CancellationToken cancellationToken = default)
     {
         var startInfo = new ProcessStartInfo(Locate())
         {
@@ -45,6 +46,12 @@ public static class OverlayClient
                  })
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        if (windows.Count > 0)
+        {
+            startInfo.ArgumentList.Add("--windows");
+            startInfo.ArgumentList.Add(string.Join(';', windows.Select(window => $"{window.X},{window.Y},{window.Width},{window.Height}")));
         }
 
         using var process = Process.Start(startInfo)
