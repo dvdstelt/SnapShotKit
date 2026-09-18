@@ -2182,12 +2182,20 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        // The selection outline sits outside the object rather than on it, so an object keeps its
-        // own stroke visible while selected: tracing over a 2px red box with a dashed steel line
-        // hides the very colour the user is about to change.
-        // Nothing is outlined while it is being typed: the editor draws its own frame, and a second
-        // one around the same words is just clutter.
-        switch (editing is null ? Selected : null)
+        // Nothing is outlined while it is being dragged into being. The shape follows the pointer,
+        // which is all the feedback a drag needs, and an outline and eight handles around something
+        // that is still changing size are chrome about a decision nobody has made yet. They appear
+        // when the drag ends, which is when there is an object to have selected.
+        //
+        // Nothing is outlined while it is being typed either: the editor draws its own frame, and a
+        // second one around the same words is just clutter.
+        //
+        // The outline sits outside the object rather than on it, so an object keeps its own stroke
+        // visible while selected: tracing over a 2px red box with a dashed steel line hides the very
+        // colour the user is about to change.
+        var settled = editing is null && dragging != DragKind.Create ? Selected : null;
+
+        switch (settled)
         {
             case RectAnnotation rect:
                 DrawSelectionBox(context, Outline(new Rect(
@@ -2213,6 +2221,11 @@ public sealed class CanvasView : Decorator
         }
 
         DrawEditingPlate(context);
+
+        if (settled is null)
+        {
+            return;
+        }
 
         foreach (var (_, point) in Handles())
         {
