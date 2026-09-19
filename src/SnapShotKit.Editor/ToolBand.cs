@@ -88,6 +88,8 @@ public sealed class ToolBand : Border
     readonly Segmented hide;
     readonly Control hideGroup;
     readonly NumberField dim;
+    readonly NumberField lens;
+    readonly Control zoomGroup;
     readonly Control dimGroup;
     readonly Control fillGroup;
     readonly Control blurGroup;
@@ -135,6 +137,8 @@ public sealed class ToolBand : Border
         // None makes it a line, which is an arrow that points at nothing rather than another tool.
         head = new Segmented(["None", "Single", "Double"], index => HeadsChosen?.Invoke(index));
 
+        lens = new NumberField("Magnification", MagnifyAnnotation.Presets, 1, 16, value => LensChosen?.Invoke(value));
+
         dim = new NumberField("Dim", SpotlightAnnotation.Presets.Select(step => (double)step).ToArray(), 1, 100,
             value => DimChosen?.Invoke((int)Math.Round(value)));
 
@@ -166,6 +170,7 @@ public sealed class ToolBand : Border
         shapeGroup = Group("Shape", shape);
         hideGroup = Group("Hide with", hide);
         dimGroup = Group("Dim", dim);
+        zoomGroup = Group("Magnification", lens);
         fillGroup = Group("Fill", fill);
         blurGroup = Group("Blur", blur);
         textSizeGroup = Group("Size", textSize);
@@ -205,7 +210,7 @@ public sealed class ToolBand : Border
         foreach (var group in new[]
                  {
                      colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
-                     headGroup, shapeGroup, hideGroup, dimGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
+                     headGroup, shapeGroup, hideGroup, dimGroup, zoomGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
                      cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, pictureGroup
                  })
         {
@@ -289,6 +294,7 @@ public sealed class ToolBand : Border
     public event Action<bool>? ShapeChosen;
     public event Action<HideMode>? HideChosen;
     public event Action<int>? DimChosen;
+    public event Action<double>? LensChosen;
     public event Action<bool>? FillChosen;
     public event Action<int>? BlurChosen;
     public event Action<double>? TextSizeChosen;
@@ -334,6 +340,7 @@ public sealed class ToolBand : Border
                      (EditorTool.Box, Lucide.Box, "Box", "Box  (B)"),
                      (EditorTool.Pen, Lucide.Pen, "Pen", "Pen  (P)\nDraws wherever the pointer goes."),
                      (EditorTool.Blur, Lucide.Blur, "Blur", "Blur  (L)"),
+                     (EditorTool.Magnify, Lucide.Magnify, "Magnify", "Magnify  (G)\nA lens: drag it out over a detail and it shows that spot larger."),
                      (EditorTool.Spotlight, Lucide.Spotlight, "Spotlight", "Spotlight  (O)\nDims everything except the regions dragged out."),
                      (EditorTool.Step, Lucide.Step, "Marker", "Numbered marker  (N)\nEach one takes the next number up."),
                      (EditorTool.Text, Lucide.Text, "Text", "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
@@ -685,6 +692,7 @@ public sealed class ToolBand : Border
             BlurAnnotation => EditorTool.Blur,
             SpotlightAnnotation => EditorTool.Spotlight,
             PenAnnotation => EditorTool.Pen,
+            MagnifyAnnotation => EditorTool.Magnify,
             TextAnnotation => EditorTool.Text,
             StepAnnotation => EditorTool.Step,
 
@@ -712,6 +720,7 @@ public sealed class ToolBand : Border
         shapeGroup.IsVisible = kind is EditorTool.Box;
         hideGroup.IsVisible = kind is EditorTool.Blur;
         dimGroup.IsVisible = kind is EditorTool.Spotlight;
+        zoomGroup.IsVisible = kind is EditorTool.Magnify;
         fillGroup.IsVisible = kind is EditorTool.Box;
         blurGroup.IsVisible = kind is EditorTool.Blur;
         textSizeGroup.IsVisible = kind is EditorTool.Text;
@@ -768,6 +777,10 @@ public sealed class ToolBand : Border
                 dim.Show(spotlight.Dim);
                 break;
 
+            case MagnifyAnnotation magnify:
+                lens.Show(magnify.Zoom);
+                break;
+
             case PenAnnotation drawn:
                 colour.Show(drawn.Color);
                 weight.Show(drawn.Thickness);
@@ -810,6 +823,7 @@ public sealed class ToolBand : Border
                 shape.Select(defaults.BoxEllipse ? 1 : 0);
                 hide.Select((int)defaults.HideMode);
                 dim.Show(defaults.SpotlightDim);
+                lens.Show(defaults.MagnifyZoom);
                 fill.Select(defaults.BoxFilled ? 1 : 0);
                 fillColour.Show(defaults.BoxFillColor);
                 blur.Show(defaults.BlurStrength);

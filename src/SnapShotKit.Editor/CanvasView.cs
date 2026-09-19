@@ -19,6 +19,9 @@ public enum EditorTool
 
     /// <summary>Draws wherever the pointer goes.</summary>
     Pen,
+
+    /// <summary>A lens showing what is under it, larger.</summary>
+    Magnify,
     Text,
     Step,
 
@@ -73,6 +76,8 @@ public sealed class ToolDefaults
     public HideMode HideMode { get; set; }
 
     public int SpotlightDim { get; set; } = 55;
+
+    public double MagnifyZoom { get; set; } = 2;
 
     public string PenColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
     public double PenThickness { get; set; } = 4;
@@ -157,6 +162,10 @@ public sealed class ToolDefaults
                 PenColor = pen.Color;
                 PenThickness = pen.Thickness;
                 break;
+
+            case MagnifyAnnotation magnify:
+                MagnifyZoom = magnify.Zoom;
+                break;
         }
     }
 
@@ -183,6 +192,8 @@ public sealed class ToolDefaults
         SpotlightAnnotation spotlight => SpotlightDim == spotlight.Dim,
 
         PenAnnotation pen => PenColor == pen.Color && PenThickness == pen.Thickness,
+
+        MagnifyAnnotation magnify => MagnifyZoom == magnify.Zoom,
 
         _ => false
     };
@@ -880,6 +891,8 @@ public sealed class CanvasView : Decorator
             Points = [image.X, image.Y],
             Color = Defaults.PenColor, Thickness = Defaults.PenThickness
         },
+
+        EditorTool.Magnify => new MagnifyAnnotation { X = image.X, Y = image.Y, Zoom = Defaults.MagnifyZoom },
 
         EditorTool.Spotlight => new SpotlightAnnotation { X = image.X, Y = image.Y, Dim = Defaults.SpotlightDim },
 

@@ -82,6 +82,9 @@ public static class Lucide
     /// <summary>pencil. Drawing by hand.</summary>
     public const string Pen = "M17,3 L21,7 L8,20 L3,21 L4,16 Z M14,6 L18,10";
 
+    /// <summary>zoom-in. A lens over part of the picture.</summary>
+    public const string Magnify = "M11,3 A8,8 0 1 1 10.9,3 Z M21,21 L16.7,16.7 M11,8 V14 M8,11 H14";
+
     /// <summary>plus. Zooming in.</summary>
     public const string Plus = "M5,12 H19 M12,5 V19";
 

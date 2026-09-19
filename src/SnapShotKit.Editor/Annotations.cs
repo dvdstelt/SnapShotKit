@@ -18,6 +18,7 @@ namespace SnapShotKit.Editor;
 [JsonDerivedType(typeof(ImageAnnotation), "image")]
 [JsonDerivedType(typeof(SpotlightAnnotation), "spotlight")]
 [JsonDerivedType(typeof(PenAnnotation), "pen")]
+[JsonDerivedType(typeof(MagnifyAnnotation), "magnify")]
 public abstract class Annotation
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
@@ -223,6 +224,41 @@ public sealed class PenAnnotation : Annotation
     }
 
     public override bool WearsStyle(Annotation style) => style is PenAnnotation pen && Color == pen.Color && Thickness == pen.Thickness;
+}
+
+/// <summary>
+/// A lens: the pictures under its middle, drawn larger inside its frame.
+///
+/// For the detail that is the point of the screenshot and is eight pixels high in it: a version
+/// number, a status icon, one cell of a table. It magnifies in place, about its own centre, so
+/// what is in the middle of the lens is what was in the middle of that spot, and dragging it over
+/// the picture works the way a glass held over a page does.
+///
+/// Like a blur it shows pictures and not what is drawn on them, and it shows them from the
+/// pictures themselves rather than from a copy taken when it was made, so it is as sharp as the
+/// capture is and follows a picture that is moved underneath it.
+/// </summary>
+public sealed class MagnifyAnnotation : RectAnnotation
+{
+    /// <summary>How many times larger.</summary>
+    public double Zoom { get; set; } = 2;
+
+    public static readonly double[] Presets = [1.5, 2, 3, 4];
+
+    public override Annotation Copy() => new MagnifyAnnotation
+    {
+        Id = Id, X = X, Y = Y, Width = Width, Height = Height, Zoom = Zoom
+    };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is MagnifyAnnotation magnify)
+        {
+            Zoom = magnify.Zoom;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is MagnifyAnnotation magnify && Zoom == magnify.Zoom;
 }
 
 /// <summary>How a hidden region hides what is under it.</summary>

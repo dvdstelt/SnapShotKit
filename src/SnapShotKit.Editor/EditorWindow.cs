@@ -515,6 +515,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Box", "B", () => SetTool(EditorTool.Box)),
             MenuEntry.Item("Pen", "P", () => SetTool(EditorTool.Pen)),
             MenuEntry.Item("Blur", "L", () => SetTool(EditorTool.Blur)),
+            MenuEntry.Item("Magnify", "G", () => SetTool(EditorTool.Magnify)),
             MenuEntry.Item("Spotlight", "O", () => SetTool(EditorTool.Spotlight)),
             MenuEntry.Item("Text", "T", () => SetTool(EditorTool.Text)),
             MenuEntry.Item("Numbered marker", "N", () => SetTool(EditorTool.Step)),
@@ -672,6 +673,14 @@ public sealed class EditorWindow : Window
 
             canvas.Defaults.BoxEllipse = ellipse;
             Apply<BoxAnnotation>("shape", box => box.Ellipse = ellipse);
+        };
+
+        band.LensChosen += zoom =>
+        {
+            if (canvas is null) return;
+
+            canvas.Defaults.MagnifyZoom = zoom;
+            Apply<MagnifyAnnotation>("zoom", magnify => magnify.Zoom = zoom);
         };
 
         band.DimChosen += amount =>
@@ -848,6 +857,7 @@ public sealed class EditorWindow : Window
         BlurAnnotation => EditorTool.Blur,
         SpotlightAnnotation => EditorTool.Spotlight,
         PenAnnotation => EditorTool.Pen,
+        MagnifyAnnotation => EditorTool.Magnify,
         TextAnnotation => EditorTool.Text,
         StepAnnotation => EditorTool.Step,
         ImageAnnotation => EditorTool.Select,
@@ -1781,6 +1791,7 @@ public sealed class EditorWindow : Window
             BlurAnnotation => "blur selected",
             SpotlightAnnotation => "spotlight selected",
             PenAnnotation => "drawing selected",
+            MagnifyAnnotation => "lens selected",
             TextAnnotation => "text selected",
             StepAnnotation => "marker selected",
             ImageAnnotation { IsCapture: true } => "capture selected",
@@ -2102,6 +2113,10 @@ public sealed class EditorWindow : Window
 
             case Key.O:
                 SetTool(EditorTool.Spotlight);
+                break;
+
+            case Key.G:
+                SetTool(EditorTool.Magnify);
                 break;
 
             case Key.T:

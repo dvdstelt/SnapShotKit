@@ -111,6 +111,10 @@ public static class SnapshotRenderer
                 // All of them at once, where the first of them stands in the stack. One dimming
                 // with a hole for each, so a second spotlight is a second thing to look at rather
                 // than something that dims the first.
+                case MagnifyAnnotation magnify:
+                    DrawMagnify(context, snapshot, magnify, index, origin, scale);
+                    break;
+
                 case SpotlightAnnotation when !dimmed:
                     DrawSpotlights(context, snapshot, origin, scale, suppress);
                     dimmed = true;
@@ -382,6 +386,55 @@ public static class SnapshotRenderer
         var strength = Math.Clamp(spotlights.Max(spotlight => spotlight.Dim), 1, 100) / 100.0;
 
         context.DrawGeometry(new SolidColorBrush(Colors.Black, strength), null, dimming);
+    }
+
+    static readonly IPen LensEdge = new Pen(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromRgb(0x1F, 0x29, 0x33)), 2);
+    static readonly IPen LensHalo = new Pen(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(230, 255, 255, 255)), 1);
+
+    /// <summary>
+    /// A lens: every picture below it, drawn again larger and clipped to its frame.
+    ///
+    /// The pictures are drawn through the same routine that draws them in the first place, with
+    /// the origin moved so that the point under the middle of the lens stays where it is while
+    /// everything grows away from it. That is all a magnification about a point is, and it means a
+    /// flipped or stretched picture is magnified flipped and stretched, without the lens knowing.
+    ///
+    /// The ground under the lens is painted first, white, so that a lens hanging over the edge of
+    /// a picture magnifies emptiness as emptiness rather than showing the unmagnified picture
+    /// through the gap. The frame is dark with a light line outside it, which is the one pairing
+    /// that shows up on a light screenshot and a dark one alike.
+    /// </summary>
+    static void DrawMagnify(DrawingContext context, Snapshot snapshot, MagnifyAnnotation magnify, int index,
+        Point origin, double scale)
+    {
+        var frame = new Rect(
+            origin.X + magnify.X * scale,
+            origin.Y + magnify.Y * scale,
+            Math.Max(magnify.Width, 1) * scale,
+            Math.Max(magnify.Height, 1) * scale);
+
+        var zoom = Math.Clamp(magnify.Zoom, 1, 16);
+
+        var middle = new Point(magnify.X + magnify.Width / 2, magnify.Y + magnify.Height / 2);
+        var grown = scale * zoom;
+        var moved = new Point(origin.X + middle.X * (scale - grown), origin.Y + middle.Y * (scale - grown));
+
+        using (context.PushClip(frame))
+        {
+            context.FillRectangle(Avalonia.Media.Brushes.White, frame);
+
+            for (var below = 0; below < index; below++)
+            {
+                if (snapshot.Document.Layers[below] is ImageAnnotation image
+                    && snapshot.BitmapOf(image.Source) is { } bitmap)
+                {
+                    DrawPicture(context, bitmap, image, moved, grown);
+                }
+            }
+        }
+
+        context.DrawRectangle(null, LensHalo, frame.Inflate(1.5));
+        context.DrawRectangle(null, LensEdge, frame);
     }
 
     static Rect RegionOf(BlurAnnotation blur) => new(blur.X, blur.Y, Math.Max(blur.Width, 1), Math.Max(blur.Height, 1));
