@@ -2020,6 +2020,17 @@ public sealed class EditorWindow : Window
 
         switch (e.Key)
         {
+            // A pixel at a time, or ten with shift: the last pixel is the one a mouse cannot do.
+            case Key.Left or Key.Right or Key.Up or Key.Down when canvas.Selected is not null:
+                var step = shift ? 10 : 1;
+
+                canvas.Nudge(
+                    e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0,
+                    e.Key == Key.Up ? -step : e.Key == Key.Down ? step : 0);
+
+                e.Handled = true;
+                break;
+
             case Key.Delete or Key.Back:
                 canvas.DeleteSelected();
                 break;

@@ -1055,6 +1055,75 @@ public sealed class CanvasView : Decorator
 
     static Rect BoundsOf(RectAnnotation rect) => new(rect.X, rect.Y, rect.Width, rect.Height);
 
+    /// <summary>When the selection was last nudged, and what it was, so a run of key presses can be told from the start of a new one.</summary>
+    DateTime nudgedAt;
+
+    Annotation? nudged;
+
+    /// <summary>
+    /// Moves the selection by whole pixels from the keyboard.
+    ///
+    /// A run of presses is one undoable step rather than one each. An arrow key held down repeats
+    /// thirty times a second, and thirty undo steps to take back one movement would make undo
+    /// useless for whatever was done before it. A pause, or a different selection, starts a new one.
+    ///
+    /// A picture takes its cuts and the canvas along, exactly as it does when dragged.
+    /// </summary>
+    public void Nudge(double x, double y)
+    {
+        if (Selected is not { } target || dragging != DragKind.None)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+
+        if (!ReferenceEquals(nudged, target) || now - nudgedAt > TimeSpan.FromMilliseconds(800))
+        {
+            BeforeChange?.Invoke();
+        }
+
+        nudged = target;
+        nudgedAt = now;
+
+        switch (target)
+        {
+            case ArrowAnnotation arrow:
+                arrow.X1 += x;
+                arrow.Y1 += y;
+                arrow.X2 += x;
+                arrow.Y2 += y;
+                break;
+
+            case ImageAnnotation picture:
+                var then = BoundsOf(picture);
+                picture.X += x;
+                picture.Y += y;
+                FollowWithCuts(then, BoundsOf(picture), CutFollow.Remember(snapshot.Document));
+                Refit();
+                break;
+
+            case RectAnnotation rect:
+                rect.X += x;
+                rect.Y += y;
+                break;
+
+            case TextAnnotation text:
+                text.X += x;
+                text.Y += y;
+                break;
+
+            case StepAnnotation step:
+                step.X += x;
+                step.Y += y;
+                break;
+        }
+
+        Changed?.Invoke();
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
     // ---- Fitting the canvas to the pictures ----------------------------------------------------
     //
     // The canvas follows the pictures unless somebody has sized it by hand, and a hand-sized canvas
