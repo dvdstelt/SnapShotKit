@@ -102,6 +102,11 @@ public sealed class ScrollStitcher
     /// <summary>How many rows at the head of a frame belong to a header that stays put, as last seen.</summary>
     int headerRows;
 
+    /// <summary>The latest frame that could not be placed, kept in case the capture ends on it.</summary>
+    byte[]? unplaced;
+
+    int[]? unplacedSignature;
+
     /// <summary>How many frames running could not be placed.</summary>
     int lost;
 
@@ -194,6 +199,9 @@ public sealed class ScrollStitcher
             // properly since. A region with a film playing in it never lines up with anything, and
             // without this it would be pasted underneath itself every second and a half for as
             // long as it was left running.
+            unplaced = frame;
+            unplacedSignature = signature;
+
             if (++lost < Patience || !followedSinceSeam)
             {
                 return Stitched.Lost;
@@ -203,6 +211,7 @@ public sealed class ScrollStitcher
         }
 
         lost = 0;
+        unplaced = null;
         headerRows = header;
         followedSinceSeam |= moved > 0;
 
@@ -260,6 +269,16 @@ public sealed class ScrollStitcher
     /// <summary>The picture: everything gathered, and whatever stayed put at the foot of the last frame underneath it.</summary>
     public Image<Rgb24> Finish()
     {
+        // Whatever was on screen at the end goes in, placed or not. The end of a page is where a
+        // capture stops, and it is also where a last hard flick of the wheel is most likely to
+        // have carried the page further than could be followed, so a frame left unplaced when the
+        // capture ends is very probably the bottom of the page. Put underneath with a seam, it
+        // may repeat a little of what is above it; left out, the bottom is simply missing.
+        if (unplaced is not null && unplacedSignature is not null && rows < MaximumRows)
+        {
+            Rejoin(unplaced, unplacedSignature);
+        }
+
         if (last is not null && footer > 0)
         {
             Append(last, height - footer, footer);
@@ -295,6 +314,7 @@ public sealed class ScrollStitcher
     Stitched Rejoin(byte[] frame, int[] signature)
     {
         lost = 0;
+        unplaced = null;
         followedSinceSeam = false;
         Seams++;
 
@@ -351,7 +371,11 @@ public sealed class ScrollStitcher
     int? Offset(byte[] frame, int[] signature, int header, int still)
     {
         var band = height - header - still;
-        var least = Math.Max(24, band / 6);
+        // The least two frames have to share to be lined up. Small, because a wheel flicked hard
+        // leaves little in common between one look and the next, and whatever is asked for here
+        // beyond what is needed is content that goes unplaced. What stops a small overlap being a
+        // false one is the check against real pixels, not the size of it.
+        var least = Math.Max(32, band / 10);
 
         if (band < least * 2)
         {
@@ -368,18 +392,22 @@ public sealed class ScrollStitcher
             var from = header + Math.Max(-offset, 0);
             var to = height - still - Math.Max(offset, 0);
 
+            // Given up on as soon as it has cost more than a fit is allowed to in total. Nearly
+            // every offset is wrong and says so within a few rows, and walking the rest of the
+            // overlap to find out exactly how wrong is most of what this search would cost: on a
+            // large region it is the difference between ten looks a second and three, and at three
+            // an ordinary scroll moves further between looks than the frames overlap.
             long total = 0;
+            var allowed = (long)(RowTolerance * Segments * (to - from));
 
-            for (var row = from; row < to; row++)
+            for (var row = from; row < to && total <= allowed; row++)
             {
                 total += Distance(signature, row, lastSignature!, row + offset);
             }
 
-            var cost = (double)total / ((to - from) * Segments);
-
-            if (cost <= RowTolerance)
+            if (total <= allowed)
             {
-                candidates.Add((offset, cost));
+                candidates.Add((offset, (double)total / ((to - from) * Segments)));
             }
         }
 

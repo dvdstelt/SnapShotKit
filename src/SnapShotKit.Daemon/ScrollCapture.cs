@@ -64,6 +64,7 @@ public static class ScrollCapture
 
         while (!stop.IsCompleted && clock.Elapsed < AtMost)
         {
+            var lookedAt = clock.Elapsed;
             var capture = await engine.CaptureAsync(cancellationToken);
 
             // A screen that has changed shape under the capture, a monitor unplugged or a
@@ -77,7 +78,9 @@ public static class ScrollCapture
             var frame = Cut(capture, area, spare);
             var outcome = stitcher.Add(frame);
 
-            spare = outcome is Stitched.Unmoved or Stitched.Lost ? frame : null;
+            // An unmoved frame is free to be written over. A lost one is not: the stitcher holds
+            // on to the latest of those, in case the capture ends on it.
+            spare = outcome is Stitched.Unmoved ? frame : null;
             outcomes[outcome] = outcomes.GetValueOrDefault(outcome) + 1;
 
             if (outcome is Stitched.Grown or Stitched.Rejoined)
@@ -98,10 +101,37 @@ public static class ScrollCapture
                 break;
             }
 
-            await Task.WhenAny(stop, Task.Delay(Interval, cancellationToken));
+            // The interval is between looks, not after each one. A look that took longer than the
+            // interval, a large region on a slow machine, is followed by the next straight away.
+            var pause = Interval - (clock.Elapsed - lookedAt);
+
+            if (pause > TimeSpan.Zero)
+            {
+                await Task.WhenAny(stop, Task.Delay(pause, cancellationToken));
+            }
         }
 
-        Log.Info($"Scrolling capture: {stitcher.Rows} rows from {area.Height} in {clock.Elapsed.TotalSeconds:F1} s ("
+        // Asked to stop with the capture key, which is pressed while the page is very likely still
+        // moving: a smooth scroll runs on for a fifth of a second after the wheel stops, and the
+        // key comes right behind the wheel. One more look once that has settled, or the capture
+        // ends a few rows short of where the page did.
+        if (stop.IsCompleted && stitcher.Rows < ScrollStitcher.MaximumRows)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(350), cancellationToken);
+
+            var settled = await engine.CaptureAsync(cancellationToken);
+
+            if (settled.Width == first.Width && settled.Height == first.Height)
+            {
+                var outcome = stitcher.Add(Cut(settled, area, spare));
+                outcomes[outcome] = outcomes.GetValueOrDefault(outcome) + 1;
+            }
+        }
+
+        var looks = outcomes.Values.Sum();
+
+        Log.Info($"Scrolling capture: {stitcher.Rows} rows from {area.Height} in {clock.Elapsed.TotalSeconds:F1} s, "
+            + $"{looks / Math.Max(clock.Elapsed.TotalSeconds, 0.1):F1} looks a second ("
             + string.Join(", ", outcomes.Select(outcome => $"{outcome.Value} {outcome.Key.ToString().ToLowerInvariant()}")) + ")");
 
         if (stitcher.Seams > 0)
