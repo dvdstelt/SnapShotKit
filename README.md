@@ -2,7 +2,9 @@
 
 A screenshot and annotation tool for Linux, in the spirit of Snagit.
 
-Press Print and the whole screen is captured immediately, so timing a capture is easy. An overlay then appears on the frozen image, where you either keep the whole screen or drag out a region; nothing moves under the cursor while you aim, because what you are aiming at is already a photograph.
+Press Print and the whole screen is captured immediately, so timing a capture is easy. An overlay then appears on the frozen image, where you keep the whole screen, drag out a region, or click a window to take exactly that window; nothing moves under the cursor while you aim, because what you are aiming at is already a photograph.
+
+A region can also be followed while you scroll it: choose Scrolling capture, scroll the page at a steady pace, and press Print again or simply stop, and everything that passed through the region opens in the editor as one tall picture.
 
 The result opens in an editor for arrows, boxes, blur, text and numbered markers, where the canvas can also be cropped or given transparent space around it, and is filed in a library grouped by day.
 

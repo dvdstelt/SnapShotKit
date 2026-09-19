@@ -73,6 +73,9 @@ public static class Lucide
     /// <summary>chevron-down. Opens what is behind a field, such as the list of printers.</summary>
     public const string More = "M6,9 L12,15 L18,9";
 
+    /// <summary>chevrons-down. Following something as it is scrolled.</summary>
+    public const string Scroll = "M7,6 L12,11 L17,6 M7,13 L12,18 L17,13";
+
     /// <summary>plus. Zooming in.</summary>
     public const string Plus = "M5,12 H19 M12,5 V19";
 

@@ -216,6 +216,10 @@ internal sealed class OverlayApp : Application
                 Finish($"region {copy.X} {copy.Y} {copy.Width} {copy.Height} copy");
                 break;
 
+            case OverlayAction.Scroll when view.Selection is { } scroll:
+                Finish($"region {scroll.X} {scroll.Y} {scroll.Width} {scroll.Height} scroll");
+                break;
+
             case OverlayAction.Cancel:
                 Finish("cancel");
                 break;

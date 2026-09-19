@@ -13,6 +13,9 @@ public enum OverlayAction
     Save,
     Edit,
     Copy,
+
+    /// <summary>Follow the region while it is scrolled, and join what passes through it into one picture.</summary>
+    Scroll,
     Cancel
 }
 
@@ -38,6 +41,16 @@ public sealed class ActionBar : StackPanel
             Children.Add(Buttons.Primary("Save to disk", Lucide.SaveToDisk, () => chosen(OverlayAction.Save)));
             Children.Add(Buttons.Secondary("Open in editor", Lucide.OpenInEditor, () => chosen(OverlayAction.Edit)));
             Children.Add(Buttons.Secondary("Copy to clipboard", Lucide.CopyToClipboard, () => chosen(OverlayAction.Copy)));
+
+            // Says what is about to happen, because once this closes there is nothing on screen to
+            // say it: nothing can be drawn over the live desktop, and a notification would slide
+            // down into the very page being captured.
+            var scroll = Buttons.Secondary("Scrolling capture", Lucide.Scroll, () => chosen(OverlayAction.Scroll));
+
+            ToolTip.SetTip(scroll, "This closes and the region is watched. Scroll the page at a steady pace, "
+                + "then press the capture key again, or just stop scrolling, and the whole of it opens in the editor.");
+
+            Children.Add(scroll);
             Children.Add(Buttons.Secondary("Cancel", Lucide.Cancel, () => chosen(OverlayAction.Cancel)));
         }
         else

@@ -9,7 +9,10 @@ public enum OverlayChoice
     Cancelled,
     Save,
     Edit,
-    Copy
+    Copy,
+
+    /// <summary>Watch the region while it is scrolled, and join what passes through it.</summary>
+    Scroll
 }
 
 /// <summary>The overlay's answer: a region, and what to do with it.</summary>
@@ -84,6 +87,7 @@ public static class OverlayClient
                 "save" => new OverlayResult(OverlayChoice.Save, region),
                 "edit" => new OverlayResult(OverlayChoice.Edit, region),
                 "copy" => new OverlayResult(OverlayChoice.Copy, region),
+                "scroll" => new OverlayResult(OverlayChoice.Scroll, region),
                 // Almost always a version skew: the overlay is rebuilt in place while the daemon
                 // keeps running the binary it started with, so it offers an action the daemon has
                 // never heard of. Saying so beats "not an action", which sounds like a bug in the
