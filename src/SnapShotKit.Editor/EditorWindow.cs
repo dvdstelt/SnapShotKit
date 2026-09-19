@@ -646,12 +646,28 @@ public sealed class EditorWindow : Window
             }
         };
 
-        band.DoubleHeadChosen += doubled =>
+        band.HeadsChosen += heads =>
         {
             if (canvas is null) return;
 
-            canvas.Defaults.ArrowDoubleHeaded = doubled;
-            Apply<ArrowAnnotation>("head", arrow => arrow.DoubleHeaded = doubled);
+            canvas.Defaults.ArrowHeads = heads;
+            Apply<ArrowAnnotation>("head", arrow => arrow.Heads = heads);
+        };
+
+        band.ShapeChosen += ellipse =>
+        {
+            if (canvas is null) return;
+
+            canvas.Defaults.BoxEllipse = ellipse;
+            Apply<BoxAnnotation>("shape", box => box.Ellipse = ellipse);
+        };
+
+        band.HideChosen += mode =>
+        {
+            if (canvas is null) return;
+
+            canvas.Defaults.HideMode = mode;
+            Apply<BlurAnnotation>("hide", blur => blur.Mode = mode);
         };
 
         band.FillChosen += filled =>

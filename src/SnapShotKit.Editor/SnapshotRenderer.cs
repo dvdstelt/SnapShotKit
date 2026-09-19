@@ -237,6 +237,12 @@ public static class SnapshotRenderer
         var thickness = Math.Max(box.BorderThickness * scale, 0);
         var pen = thickness > 0 ? new Pen(BrushFor(box.BorderColor), thickness) : null;
 
+        if (box.Ellipse)
+        {
+            context.DrawEllipse(fill, pen, rect.Center, rect.Width / 2, rect.Height / 2);
+            return;
+        }
+
         context.DrawRectangle(fill, pen, rect);
     }
 
@@ -276,13 +282,20 @@ public static class SnapshotRenderer
             region.Width * scale,
             region.Height * scale);
 
+        if (blur.Mode == HideMode.Solid)
+        {
+            // Nothing of what is underneath goes into this, so nothing of it can be got back out.
+            context.FillRectangle(Avalonia.Media.Brushes.Black, destination);
+            return;
+        }
+
         using (context.PushClip(destination))
         {
             for (var below = 0; below < index; below++)
             {
                 if (snapshot.Document.Layers[below] is ImageAnnotation image
                     && Hides(blur, image)
-                    && blurs.For(image.Source, blur.Strength) is { } blurred)
+                    && blurs.For(image.Source, blur.Strength, blur.Mode) is { } blurred)
                 {
                     DrawPicture(context, blurred, image, origin, scale);
                 }
@@ -317,6 +330,13 @@ public static class SnapshotRenderer
 
         var brush = BrushFor(arrow.Color);
         var thickness = Math.Max(arrow.Thickness * scale, 1);
+
+        if (arrow.Headless)
+        {
+            // A line: the shaft from end to end, with nothing to stop short of.
+            context.DrawLine(new Pen(brush, thickness, lineCap: PenLineCap.Round), from, to);
+            return;
+        }
 
         var headLength = Math.Min(thickness * 3.4, length / (arrow.DoubleHeaded ? 2 : 1));
 

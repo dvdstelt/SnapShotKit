@@ -83,6 +83,10 @@ public sealed class ToolBand : Border
     readonly Control stepSizeGroup;
     readonly Control weightGroup;
     readonly Control headGroup;
+    readonly Segmented shape;
+    readonly Control shapeGroup;
+    readonly Segmented hide;
+    readonly Control hideGroup;
     readonly Control fillGroup;
     readonly Control blurGroup;
     readonly Control textSizeGroup;
@@ -126,7 +130,15 @@ public sealed class ToolBand : Border
 
         stepSize = new NumberField("Size", [28, 36, 48, 64], 12, 200, value => StepSizeChosen?.Invoke(value));
 
-        head = new Segmented(["Single", "Double"], index => DoubleHeadChosen?.Invoke(index == 1));
+        // None makes it a line, which is an arrow that points at nothing rather than another tool.
+        head = new Segmented(["None", "Single", "Double"], index => HeadsChosen?.Invoke(index));
+
+        shape = new Segmented(["Rectangle", "Ellipse"], index => ShapeChosen?.Invoke(index == 1));
+
+        // In order of how much each leaves behind. A blur can sometimes be worked backwards on
+        // text; squares throw the detail away; a bar leaves nothing.
+        hide = new Segmented(["Blur", "Pixelate", "Solid"], index => HideChosen?.Invoke((HideMode)index));
+        ToolTip.SetTip(hide, "How what is underneath is hidden.\nA light blur over text can sometimes be reversed. For anything that must not be read, use Solid.");
 
         // Automatic first, because it is right nearly always: a band is almost never so small that
         // the way it was dragged does not say which way it runs.
@@ -146,6 +158,8 @@ public sealed class ToolBand : Border
         fillColourGroup = Group("Fill colour", fillColour);
         weightGroup = Group("Weight", weight);
         headGroup = Group("Head", head);
+        shapeGroup = Group("Shape", shape);
+        hideGroup = Group("Hide with", hide);
         fillGroup = Group("Fill", fill);
         blurGroup = Group("Blur", blur);
         textSizeGroup = Group("Size", textSize);
@@ -185,7 +199,7 @@ public sealed class ToolBand : Border
         foreach (var group in new[]
                  {
                      colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
-                     headGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
+                     headGroup, shapeGroup, hideGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
                      cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, pictureGroup
                  })
         {
@@ -265,7 +279,9 @@ public sealed class ToolBand : Border
     public event Action<string>? ColourChosen;
     public event Action<string>? FillColourChosen;
     public event Action<double>? WeightChosen;
-    public event Action<bool>? DoubleHeadChosen;
+    public event Action<int>? HeadsChosen;
+    public event Action<bool>? ShapeChosen;
+    public event Action<HideMode>? HideChosen;
     public event Action<bool>? FillChosen;
     public event Action<int>? BlurChosen;
     public event Action<double>? TextSizeChosen;
@@ -682,6 +698,8 @@ public sealed class ToolBand : Border
         colourGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box or EditorTool.Text or EditorTool.Step;
         weightGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box;
         headGroup.IsVisible = kind is EditorTool.Arrow;
+        shapeGroup.IsVisible = kind is EditorTool.Box;
+        hideGroup.IsVisible = kind is EditorTool.Blur;
         fillGroup.IsVisible = kind is EditorTool.Box;
         blurGroup.IsVisible = kind is EditorTool.Blur;
         textSizeGroup.IsVisible = kind is EditorTool.Text;
@@ -718,18 +736,20 @@ public sealed class ToolBand : Border
             case ArrowAnnotation arrow:
                 colour.Show(arrow.Color);
                 weight.Show(arrow.Thickness);
-                head.Select(arrow.DoubleHeaded ? 1 : 0);
+                head.Select(arrow.Heads);
                 break;
 
             case BoxAnnotation shape:
                 colour.Show(shape.BorderColor);
                 weight.Show(shape.BorderThickness);
+                this.shape.Select(shape.Ellipse ? 1 : 0);
                 fill.Select(shape.HasFill ? 1 : 0);
                 fillColour.Show(shape.HasFill ? shape.FillColor : defaults.BoxFillColor);
                 break;
 
             case BlurAnnotation region:
                 blur.Show(region.Strength);
+                hide.Select((int)region.Mode);
                 break;
 
             case TextAnnotation text:
@@ -759,7 +779,9 @@ public sealed class ToolBand : Border
                 stepSize.Show(defaults.StepDiameter);
 
                 weight.Show(tool == EditorTool.Box ? defaults.BoxBorderThickness : defaults.ArrowThickness);
-                head.Select(defaults.ArrowDoubleHeaded ? 1 : 0);
+                head.Select(defaults.ArrowHeads);
+                shape.Select(defaults.BoxEllipse ? 1 : 0);
+                hide.Select((int)defaults.HideMode);
                 fill.Select(defaults.BoxFilled ? 1 : 0);
                 fillColour.Show(defaults.BoxFillColor);
                 blur.Show(defaults.BlurStrength);

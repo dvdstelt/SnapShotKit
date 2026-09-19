@@ -41,17 +41,18 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
     /// </summary>
     readonly HashSet<string> undecodable = [];
 
-    readonly Dictionary<(string Source, int Strength), Bitmap> cache = [];
+    readonly Dictionary<(string Source, int Strength, HideMode Mode), Bitmap> cache = [];
 
     /// <summary>What was asked for, least recent first, so eviction drops the stalest.</summary>
-    readonly List<(string Source, int Strength)> recency = [];
+    readonly List<(string Source, int Strength, HideMode Mode)> recency = [];
 
     /// <param name="source">The entry the picture is kept under.</param>
     /// <param name="strength">1 to 100, as stored on the annotation rather than a gaussian sigma.</param>
     /// <returns>Null when there is no such picture, or it would not decode.</returns>
-    public Bitmap? For(string source, int strength)
+    /// <param name="mode">Blurred or in squares. A solid bar is drawn without any copy of the picture, and is never asked for here.</param>
+    public Bitmap? For(string source, int strength, HideMode mode = HideMode.Blur)
     {
-        var key = (source, Normalised(strength));
+        var key = (source, Normalised(strength), mode);
 
         if (cache.TryGetValue(key, out var existing))
         {
@@ -81,7 +82,26 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
 
         using (image)
         {
-            image.Mutate(context => context.GaussianBlur(BlurAnnotation.Sigmaof(key.Item2)));
+            if (mode == HideMode.Pixelate)
+            {
+                // From squares of four pixels at the lightest to forty at the heaviest, which at
+                // body-text sizes runs from "can nearly be read" to "could be anything".
+                //
+                // Averaged down and blown back up rather than ImageSharp's own Pixelate, which
+                // takes each square's colour from the one pixel at its middle. On black text on
+                // white that pixel is nearly always white, and the text does not turn into squares,
+                // it vanishes, leaving a region that looks as if nothing was ever there.
+                var square = Math.Max(4 + key.Item2 * 36 / 100, 2);
+                var (width, height) = (image.Width, image.Height);
+
+                image.Mutate(context => context
+                    .Resize(Math.Max(width / square, 1), Math.Max(height / square, 1), KnownResamplers.Box)
+                    .Resize(width, height, KnownResamplers.NearestNeighbor));
+            }
+            else
+            {
+                image.Mutate(context => context.GaussianBlur(BlurAnnotation.Sigmaof(key.Item2)));
+            }
 
             var bitmap = ToBitmap(image);
             cache[key] = bitmap;
@@ -107,9 +127,9 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
     static int Normalised(int strength) => Math.Clamp(strength <= 0 ? 45 : strength, 1, 100);
 
     /// <summary>Every copy the document as it stands is drawn from: each blur, and each picture under it.</summary>
-    HashSet<(string Source, int Strength)> Wanted()
+    HashSet<(string Source, int Strength, HideMode Mode)> Wanted()
     {
-        var wanted = new HashSet<(string, int)>();
+        var wanted = new HashSet<(string, int, HideMode)>();
         var layers = snapshot.Document.Layers;
 
         for (var index = 0; index < layers.Count; index++)
@@ -121,7 +141,7 @@ public sealed class BlurCache(Snapshot snapshot) : IDisposable
 
             foreach (var image in layers.Take(index).OfType<ImageAnnotation>().Where(image => SnapshotRenderer.Hides(blur, image)))
             {
-                wanted.Add((image.Source, Normalised(blur.Strength)));
+                wanted.Add((image.Source, Normalised(blur.Strength), blur.Mode));
             }
         }
 

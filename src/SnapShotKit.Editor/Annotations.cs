@@ -71,10 +71,33 @@ public sealed class ArrowAnnotation : Annotation
     /// </summary>
     public bool DoubleHeaded { get; set; }
 
+    /// <summary>
+    /// No head at either end, which makes it a line.
+    ///
+    /// A line is an arrow that points at nothing rather than a tool of its own: it is drawn, picked
+    /// up, moved and styled in exactly the same way, and somebody who drew an arrow and wanted a
+    /// line should be able to say so without drawing it again. Kept beside
+    /// <see cref="DoubleHeaded"/> rather than replacing it with a count, so that documents written
+    /// before there were lines still mean what they meant.
+    /// </summary>
+    public bool Headless { get; set; }
+
+    /// <summary>How many heads: none, one at the far end, or one at each.</summary>
+    [JsonIgnore]
+    public int Heads
+    {
+        get => Headless ? 0 : DoubleHeaded ? 2 : 1;
+        set
+        {
+            Headless = value <= 0;
+            DoubleHeaded = value >= 2;
+        }
+    }
+
     public override Annotation Copy() => new ArrowAnnotation
     {
         Id = Id, X1 = X1, Y1 = Y1, X2 = X2, Y2 = Y2,
-        Color = Color, Thickness = Thickness, DoubleHeaded = DoubleHeaded
+        Color = Color, Thickness = Thickness, DoubleHeaded = DoubleHeaded, Headless = Headless
     };
 
     public override void AdoptStyle(Annotation style)
@@ -83,12 +106,20 @@ public sealed class ArrowAnnotation : Annotation
         {
             Color = arrow.Color;
             Thickness = arrow.Thickness;
-            DoubleHeaded = arrow.DoubleHeaded;
+            Heads = arrow.Heads;
         }
     }
 
     public override bool WearsStyle(Annotation style) => style is ArrowAnnotation arrow
-        && Color == arrow.Color && Thickness == arrow.Thickness && DoubleHeaded == arrow.DoubleHeaded;
+        && Color == arrow.Color && Thickness == arrow.Thickness && Heads == arrow.Heads;
+}
+
+/// <summary>How a hidden region hides what is under it.</summary>
+public enum HideMode
+{
+    Blur,
+    Pixelate,
+    Solid
 }
 
 public sealed class BlurAnnotation : RectAnnotation
@@ -121,9 +152,20 @@ public sealed class BlurAnnotation : RectAnnotation
         return Math.Max(normalised * normalised * 8f, 0.1f);
     }
 
+    /// <summary>
+    /// How what is underneath is hidden.
+    ///
+    /// A gaussian blur looks best and hides least: on text set in a known typeface, a light blur
+    /// can be worked backwards, and people have had passwords read out of screenshots that way.
+    /// Squares throw the detail away instead of smearing it, and a solid bar leaves nothing at all,
+    /// which is the only honest answer for something that must not be read. Blur is first, so a
+    /// document from before there was a choice means what it always meant.
+    /// </summary>
+    public HideMode Mode { get; set; }
+
     public override Annotation Copy() => new BlurAnnotation
     {
-        Id = Id, X = X, Y = Y, Width = Width, Height = Height, Strength = Strength
+        Id = Id, X = X, Y = Y, Width = Width, Height = Height, Strength = Strength, Mode = Mode
     };
 
     public override void AdoptStyle(Annotation style)
@@ -131,10 +173,11 @@ public sealed class BlurAnnotation : RectAnnotation
         if (style is BlurAnnotation blur)
         {
             Strength = blur.Strength;
+            Mode = blur.Mode;
         }
     }
 
-    public override bool WearsStyle(Annotation style) => style is BlurAnnotation blur && Strength == blur.Strength;
+    public override bool WearsStyle(Annotation style) => style is BlurAnnotation blur && Strength == blur.Strength && Mode == blur.Mode;
 }
 
 public sealed class BoxAnnotation : RectAnnotation
@@ -152,10 +195,19 @@ public sealed class BoxAnnotation : RectAnnotation
     [JsonIgnore]
     public bool HasFill => !string.IsNullOrWhiteSpace(FillColor);
 
+    /// <summary>
+    /// Round rather than square: the ellipse that fits the same rectangle.
+    ///
+    /// The same object with a different outline, for the same reason a line is an arrow. It is
+    /// dragged out, sized by the same eight grips and filled the same way, and the only thing that
+    /// differs is the path the border takes.
+    /// </summary>
+    public bool Ellipse { get; set; }
+
     public override Annotation Copy() => new BoxAnnotation
     {
         Id = Id, X = X, Y = Y, Width = Width, Height = Height,
-        BorderColor = BorderColor, BorderThickness = BorderThickness, FillColor = FillColor
+        BorderColor = BorderColor, BorderThickness = BorderThickness, FillColor = FillColor, Ellipse = Ellipse
     };
 
     public override void AdoptStyle(Annotation style)
@@ -165,11 +217,13 @@ public sealed class BoxAnnotation : RectAnnotation
             BorderColor = box.BorderColor;
             BorderThickness = box.BorderThickness;
             FillColor = box.FillColor;
+            Ellipse = box.Ellipse;
         }
     }
 
     public override bool WearsStyle(Annotation style) => style is BoxAnnotation box
-        && BorderColor == box.BorderColor && BorderThickness == box.BorderThickness && FillColor == box.FillColor;
+        && BorderColor == box.BorderColor && BorderThickness == box.BorderThickness && FillColor == box.FillColor
+        && Ellipse == box.Ellipse;
 }
 
 public sealed class TextAnnotation : Annotation

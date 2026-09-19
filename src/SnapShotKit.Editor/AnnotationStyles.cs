@@ -66,7 +66,12 @@ public static class AnnotationStyles
         // Both ends, for saying that two things are the same rather than that one is over there.
         new("Red, both ends", Arrow(Red, Thin, doubled: true)),
         new("Black, both ends", Arrow(Black, Thin, doubled: true)),
-        new("White, both ends", Arrow(White, Thin, doubled: true))
+        new("White, both ends", Arrow(White, Thin, doubled: true)),
+
+        // No ends at all: a line, for underlining something or joining two things without saying
+        // which of them is pointing at the other.
+        new("Red line", Line(Red, Thin)),
+        new("Black line", Line(Black, Thin))
     ];
 
     static readonly AnnotationStyle[] Boxes =
@@ -86,7 +91,17 @@ public static class AnnotationStyles
 
         // What a box is for when it is covering something up rather than pointing at it.
         new("Solid black", Box(Black, Thin, Black)),
-        new("Solid white", Box(White, Thin, White))
+        new("Solid white", Box(White, Thin, White)),
+
+        new("Red ellipse", Ellipse(Red, Thin)),
+        new("Black ellipse", Ellipse(Black, Thin)),
+
+        // A highlighter: no border, and a fill that lets what is under it show through. It is a
+        // box like any other, so it is dragged over a line of text the way one would be, and the
+        // colours are the ones a marker pen comes in.
+        new("Yellow highlight", Highlight("#80FFE600")),
+        new("Green highlight", Highlight("#7065E06B")),
+        new("Pink highlight", Highlight("#70FF6FB5"))
     ];
 
     static readonly AnnotationStyle[] Texts =
@@ -124,6 +139,15 @@ public static class AnnotationStyles
 
     static ArrowAnnotation Arrow(string colour, double thickness, bool doubled = false) =>
         new() { Color = colour, Thickness = thickness, DoubleHeaded = doubled };
+
+    static ArrowAnnotation Line(string colour, double thickness) =>
+        new() { Color = colour, Thickness = thickness, Headless = true };
+
+    static BoxAnnotation Ellipse(string colour, double thickness) =>
+        new() { BorderColor = colour, BorderThickness = thickness, Ellipse = true };
+
+    static BoxAnnotation Highlight(string fill) =>
+        new() { BorderColor = Black, BorderThickness = 0, FillColor = fill };
 
     static BoxAnnotation Box(string colour, double thickness, string fill = "") =>
         new() { BorderColor = colour, BorderThickness = thickness, FillColor = fill };

@@ -45,7 +45,8 @@ public sealed class ToolDefaults
 {
     public string ArrowColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
     public double ArrowThickness { get; set; } = 4;
-    public bool ArrowDoubleHeaded { get; set; }
+    /// <summary>None, one or two. None is a line.</summary>
+    public int ArrowHeads { get; set; } = 1;
 
     public string BoxBorderColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
     public double BoxBorderThickness { get; set; } = 4;
@@ -59,7 +60,11 @@ public sealed class ToolDefaults
     /// </summary>
     public string BoxFillColor { get; set; } = "#000000";
 
+    public bool BoxEllipse { get; set; }
+
     public int BlurStrength { get; set; } = 35;
+
+    public HideMode HideMode { get; set; }
 
     public double StepDiameter { get; set; } = 36;
     public string StepColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
@@ -95,13 +100,14 @@ public sealed class ToolDefaults
             case ArrowAnnotation arrow:
                 ArrowColor = arrow.Color;
                 ArrowThickness = arrow.Thickness;
-                ArrowDoubleHeaded = arrow.DoubleHeaded;
+                ArrowHeads = arrow.Heads;
                 break;
 
             case BoxAnnotation box:
                 BoxBorderColor = box.BorderColor;
                 BoxBorderThickness = box.BorderThickness;
                 BoxFilled = box.HasFill;
+                BoxEllipse = box.Ellipse;
 
                 if (box.HasFill)
                 {
@@ -129,6 +135,7 @@ public sealed class ToolDefaults
 
             case BlurAnnotation blur:
                 BlurStrength = blur.Strength;
+                HideMode = blur.Mode;
                 break;
         }
     }
@@ -138,11 +145,12 @@ public sealed class ToolDefaults
     {
         ArrowAnnotation arrow => ArrowColor == arrow.Color
             && ArrowThickness == arrow.Thickness
-            && ArrowDoubleHeaded == arrow.DoubleHeaded,
+            && ArrowHeads == arrow.Heads,
 
         BoxAnnotation box => BoxBorderColor == box.BorderColor
             && BoxBorderThickness == box.BorderThickness
-            && (BoxFilled ? BoxFillColor : string.Empty) == box.FillColor,
+            && (BoxFilled ? BoxFillColor : string.Empty) == box.FillColor
+            && BoxEllipse == box.Ellipse,
 
         TextAnnotation text => TextColor == text.Color
             && TextSize == text.FontSize
@@ -150,7 +158,7 @@ public sealed class ToolDefaults
 
         StepAnnotation step => StepColor == step.Color && StepDiameter == step.Diameter,
 
-        BlurAnnotation blur => BlurStrength == blur.Strength,
+        BlurAnnotation blur => BlurStrength == blur.Strength && HideMode == blur.Mode,
 
         _ => false
     };
@@ -812,7 +820,7 @@ public sealed class CanvasView : Decorator
         {
             X1 = image.X, Y1 = image.Y, X2 = image.X, Y2 = image.Y,
             Color = Defaults.ArrowColor, Thickness = Defaults.ArrowThickness,
-            DoubleHeaded = Defaults.ArrowDoubleHeaded
+            Heads = Defaults.ArrowHeads
         },
 
         EditorTool.Box => new BoxAnnotation
@@ -820,7 +828,8 @@ public sealed class CanvasView : Decorator
             X = image.X, Y = image.Y,
             BorderColor = Defaults.BoxBorderColor,
             BorderThickness = Defaults.BoxBorderThickness,
-            FillColor = Defaults.BoxFilled ? Defaults.BoxFillColor : string.Empty
+            FillColor = Defaults.BoxFilled ? Defaults.BoxFillColor : string.Empty,
+            Ellipse = Defaults.BoxEllipse
         },
 
         EditorTool.Text => new TextAnnotation
@@ -842,7 +851,7 @@ public sealed class CanvasView : Decorator
             Color = Defaults.StepColor
         },
 
-        _ => new BlurAnnotation { X = image.X, Y = image.Y, Strength = Defaults.BlurStrength }
+        _ => new BlurAnnotation { X = image.X, Y = image.Y, Strength = Defaults.BlurStrength, Mode = Defaults.HideMode }
     };
 
     /// <summary>One above the highest marker on the picture, so a walkthrough numbers itself.</summary>
@@ -2186,6 +2195,23 @@ public sealed class CanvasView : Decorator
     bool OnBoxBorder(BoxAnnotation box, Point image)
     {
         var reach = Math.Max(box.BorderThickness, 8 / Scale);
+
+        if (box.Ellipse)
+        {
+            // How far out from the centre the point is, as a share of the way to the outline along
+            // that same direction: one is on the line. The reach is turned into the same measure
+            // by the smaller radius, which errs towards generous on the long sides of a flat one.
+            var radiusX = Math.Max(box.Width / 2, 1);
+            var radiusY = Math.Max(box.Height / 2, 1);
+
+            var x = (image.X - (box.X + box.Width / 2)) / radiusX;
+            var y = (image.Y - (box.Y + box.Height / 2)) / radiusY;
+
+            var distance = Math.Sqrt(x * x + y * y);
+            var slack = reach / Math.Min(radiusX, radiusY);
+
+            return Math.Abs(distance - 1) <= slack;
+        }
 
         var outer = image.X >= box.X - reach && image.X <= box.X + box.Width + reach
             && image.Y >= box.Y - reach && image.Y <= box.Y + box.Height + reach;

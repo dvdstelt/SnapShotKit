@@ -169,6 +169,16 @@ Text can sit on a plate. No single ink colour is legible over a photograph or a 
 
 Annotations that are defined by a rectangle share a `RectAnnotation` base, so the canvas moves and resizes a blur or a box without knowing which it has. Ellipse, highlight and step numbers would all fit the same way.
 
+## Tools that are settings
+
+A line, an ellipse, a highlighter and the two stronger ways of hiding something are not tools of their own. A line is an arrow with no heads, an ellipse is a box with a round outline, a highlighter is a box with no border and a fill that shows through, and squares or a solid bar are what a blurred region can be told to use instead of a blur. Each is a setting on the object it is a kind of, and a style in that tool's grid.
+
+That is less to learn and less to build, but the reason is that it is what they are. A line is dragged out, picked up, moved, restyled and nudged exactly as an arrow is, and somebody who drew an arrow and wanted a line should be able to say so without drawing it again. A tool per shape would have made that a delete and a redraw, and would have given six near-identical buttons to a toolbar that names every tool under its icon. The new properties are additive, with defaults that mean what documents meant before they existed, so the format version does not move.
+
+**Hiding has three strengths because a blur is the weakest.** A light gaussian over text set in a known typeface can be worked backwards, and passwords have been read out of screenshots that way. Squares throw the detail away instead of smearing it; they are made by averaging the picture down and blowing it back up, because ImageSharp's own pixelate takes each square from the single pixel at its middle, which on black text on white is nearly always white, so the text vanishes instead of turning into squares. A solid bar takes nothing from what is under it, so nothing can be got back out, and the tooltip says to use it for anything that must not be read.
+
+The arrow keys nudge the selection a pixel at a time, ten with shift. A run of presses is one undo step, since a held key repeats thirty times a second and thirty steps to take back one movement would make undo useless for whatever came before. A picture nudged takes its cuts and the canvas along, as one dragged does.
+
 ## Pictures on the canvas
 
 The capture is a layer. It used to be a backdrop painted before everything else, which made it the one thing on the canvas nothing could touch, and pasting a second picture beside it would then have given two kinds of picture that behaved differently. Now the capture and anything pasted are the same kind of layer: a rectangle saying where the picture stands and how large it is, which way round it faces, and the entry in the snapshot holding its pixels. The pixels are never touched, so a picture shrunk today can be put back to its actual size next week. A document from before this has its capture given a layer at the bottom of the stack, at the origin and at its own size, which is exactly where it was always drawn.
