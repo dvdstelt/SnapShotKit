@@ -188,7 +188,37 @@ public static class SnapshotRenderer
             case TextAnnotation text:
                 DrawText(context, text, origin, scale);
                 break;
+
+            case PenAnnotation pen:
+                DrawPen(context, pen, origin, scale);
+                break;
         }
+    }
+
+    /// <summary>A hand-drawn line, with round ends and round joins so a sharp turn of the hand is a corner and not a spike.</summary>
+    static void DrawPen(DrawingContext context, PenAnnotation pen, Point origin, double scale)
+    {
+        if (pen.Points.Count < 4)
+        {
+            return;
+        }
+
+        var path = new StreamGeometry();
+
+        using (var sink = path.Open())
+        {
+            sink.BeginFigure(new Point(origin.X + pen.Points[0] * scale, origin.Y + pen.Points[1] * scale), false);
+
+            for (var index = 2; index + 1 < pen.Points.Count; index += 2)
+            {
+                sink.LineTo(new Point(origin.X + pen.Points[index] * scale, origin.Y + pen.Points[index + 1] * scale));
+            }
+
+            sink.EndFigure(false);
+        }
+
+        context.DrawGeometry(null, new Pen(BrushFor(pen.Color), Math.Max(pen.Thickness * scale, 1),
+            lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), path);
     }
 
     /// <summary>Text, on its plate when it has one.</summary>

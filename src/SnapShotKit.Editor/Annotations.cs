@@ -17,6 +17,7 @@ namespace SnapShotKit.Editor;
 [JsonDerivedType(typeof(StepAnnotation), "step")]
 [JsonDerivedType(typeof(ImageAnnotation), "image")]
 [JsonDerivedType(typeof(SpotlightAnnotation), "spotlight")]
+[JsonDerivedType(typeof(PenAnnotation), "pen")]
 public abstract class Annotation
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
@@ -147,6 +148,81 @@ public sealed class SpotlightAnnotation : RectAnnotation
     }
 
     public override bool WearsStyle(Annotation style) => style is SpotlightAnnotation spotlight && Dim == spotlight.Dim;
+}
+
+/// <summary>
+/// A line drawn by hand: wherever the pointer went while the button was down.
+///
+/// For the things no shape fits, a ring round something irregular, a squiggle under a word, a
+/// tick. Kept as the points it passed through rather than as a picture of them, so it can be moved,
+/// recoloured and made thicker afterwards like anything else. It is not resized: a drawing
+/// stretched by a corner is a different drawing, and the honest way to get a bigger one is to draw
+/// it bigger.
+/// </summary>
+public sealed class PenAnnotation : Annotation
+{
+    /// <summary>The points along it, x then y, in image pixels. One flat list because a thousand little objects is a poor way to write a line into a file.</summary>
+    public List<double> Points { get; set; } = [];
+
+    public string Color { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
+
+    public double Thickness { get; set; } = 4;
+
+    /// <summary>The rectangle the points fall in, not counting the thickness of the line.</summary>
+    [JsonIgnore]
+    public (double X, double Y, double Width, double Height) Bounds
+    {
+        get
+        {
+            if (Points.Count < 2)
+            {
+                return default;
+            }
+
+            double left = double.MaxValue, top = double.MaxValue, right = double.MinValue, bottom = double.MinValue;
+
+            for (var index = 0; index + 1 < Points.Count; index += 2)
+            {
+                left = Math.Min(left, Points[index]);
+                right = Math.Max(right, Points[index]);
+                top = Math.Min(top, Points[index + 1]);
+                bottom = Math.Max(bottom, Points[index + 1]);
+            }
+
+            return (left, top, right - left, bottom - top);
+        }
+    }
+
+    /// <summary>Adds a point, unless the pointer has barely moved: a slow hand would otherwise write hundreds of points into one short stroke.</summary>
+    public void Extend(double x, double y)
+    {
+        if (Points.Count >= 2 && Math.Abs(Points[^2] - x) < 1.5 && Math.Abs(Points[^1] - y) < 1.5)
+        {
+            return;
+        }
+
+        Points.Add(x);
+        Points.Add(y);
+    }
+
+    /// <summary>Puts every point where <paramref name="from"/> has it, moved by the given amount.</summary>
+    public void PlaceFrom(PenAnnotation from, double x, double y)
+    {
+        Points = [.. from.Points.Select((value, index) => value + (index % 2 == 0 ? x : y))];
+    }
+
+    public override Annotation Copy() => new PenAnnotation { Id = Id, Points = [.. Points], Color = Color, Thickness = Thickness };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is PenAnnotation pen)
+        {
+            Color = pen.Color;
+            Thickness = pen.Thickness;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is PenAnnotation pen && Color == pen.Color && Thickness == pen.Thickness;
 }
 
 /// <summary>How a hidden region hides what is under it.</summary>

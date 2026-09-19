@@ -513,6 +513,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Select", "V", () => SetTool(EditorTool.Select)),
             MenuEntry.Item("Arrow", "A", () => SetTool(EditorTool.Arrow)),
             MenuEntry.Item("Box", "B", () => SetTool(EditorTool.Box)),
+            MenuEntry.Item("Pen", "P", () => SetTool(EditorTool.Pen)),
             MenuEntry.Item("Blur", "L", () => SetTool(EditorTool.Blur)),
             MenuEntry.Item("Spotlight", "O", () => SetTool(EditorTool.Spotlight)),
             MenuEntry.Item("Text", "T", () => SetTool(EditorTool.Text)),
@@ -624,6 +625,11 @@ public sealed class EditorWindow : Window
                     Apply<StepAnnotation>("colour", step => step.Color = colour);
                     break;
 
+                case EditorTool.Pen:
+                    canvas.Defaults.PenColor = colour;
+                    Apply<PenAnnotation>("colour", pen => pen.Color = colour);
+                    break;
+
                 default:
                     canvas.Defaults.ArrowColor = colour;
                     Apply<ArrowAnnotation>("colour", arrow => arrow.Color = colour);
@@ -639,6 +645,11 @@ public sealed class EditorWindow : Window
             {
                 canvas.Defaults.BoxBorderThickness = weight;
                 Apply<BoxAnnotation>("weight", box => box.BorderThickness = weight);
+            }
+            else if (BandTarget() == EditorTool.Pen)
+            {
+                canvas.Defaults.PenThickness = weight;
+                Apply<PenAnnotation>("weight", pen => pen.Thickness = weight);
             }
             else
             {
@@ -836,6 +847,7 @@ public sealed class EditorWindow : Window
         BoxAnnotation => EditorTool.Box,
         BlurAnnotation => EditorTool.Blur,
         SpotlightAnnotation => EditorTool.Spotlight,
+        PenAnnotation => EditorTool.Pen,
         TextAnnotation => EditorTool.Text,
         StepAnnotation => EditorTool.Step,
         ImageAnnotation => EditorTool.Select,
@@ -1768,6 +1780,7 @@ public sealed class EditorWindow : Window
             BoxAnnotation => "box selected",
             BlurAnnotation => "blur selected",
             SpotlightAnnotation => "spotlight selected",
+            PenAnnotation => "drawing selected",
             TextAnnotation => "text selected",
             StepAnnotation => "marker selected",
             ImageAnnotation { IsCapture: true } => "capture selected",
@@ -2077,6 +2090,10 @@ public sealed class EditorWindow : Window
 
             case Key.B:
                 SetTool(EditorTool.Box);
+                break;
+
+            case Key.P:
+                SetTool(EditorTool.Pen);
                 break;
 
             case Key.L:

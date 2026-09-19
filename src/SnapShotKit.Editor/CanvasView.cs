@@ -16,6 +16,9 @@ public enum EditorTool
 
     /// <summary>Dims everything but the region dragged out.</summary>
     Spotlight,
+
+    /// <summary>Draws wherever the pointer goes.</summary>
+    Pen,
     Text,
     Step,
 
@@ -70,6 +73,9 @@ public sealed class ToolDefaults
     public HideMode HideMode { get; set; }
 
     public int SpotlightDim { get; set; } = 55;
+
+    public string PenColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
+    public double PenThickness { get; set; } = 4;
 
     public double StepDiameter { get; set; } = 36;
     public string StepColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
@@ -146,6 +152,11 @@ public sealed class ToolDefaults
             case SpotlightAnnotation spotlight:
                 SpotlightDim = spotlight.Dim;
                 break;
+
+            case PenAnnotation pen:
+                PenColor = pen.Color;
+                PenThickness = pen.Thickness;
+                break;
         }
     }
 
@@ -170,6 +181,8 @@ public sealed class ToolDefaults
         BlurAnnotation blur => BlurStrength == blur.Strength && HideMode == blur.Mode,
 
         SpotlightAnnotation spotlight => SpotlightDim == spotlight.Dim,
+
+        PenAnnotation pen => PenColor == pen.Color && PenThickness == pen.Thickness,
 
         _ => false
     };
@@ -862,6 +875,12 @@ public sealed class CanvasView : Decorator
             Color = Defaults.StepColor
         },
 
+        EditorTool.Pen => new PenAnnotation
+        {
+            Points = [image.X, image.Y],
+            Color = Defaults.PenColor, Thickness = Defaults.PenThickness
+        },
+
         EditorTool.Spotlight => new SpotlightAnnotation { X = image.X, Y = image.Y, Dim = Defaults.SpotlightDim },
 
         _ => new BlurAnnotation { X = image.X, Y = image.Y, Strength = Defaults.BlurStrength, Mode = Defaults.HideMode }
@@ -942,6 +961,20 @@ public sealed class CanvasView : Decorator
             case TextAnnotation text when dragBaseline is TextAnnotation baseline:
                 text.X = baseline.X + delta.X;
                 text.Y = baseline.Y + delta.Y;
+                break;
+
+            // Being drawn, it grows by wherever the pointer now is. Picked up afterwards it moves
+            // whole, from where it was when it was picked up.
+            case PenAnnotation pen when dragBaseline is PenAnnotation baseline:
+                if (dragging == DragKind.Create)
+                {
+                    pen.Extend(image.X, image.Y);
+                }
+                else
+                {
+                    pen.PlaceFrom(baseline, delta.X, delta.Y);
+                }
+
                 break;
 
             case StepAnnotation step when dragBaseline is StepAnnotation baseline:
@@ -1138,6 +1171,10 @@ public sealed class CanvasView : Decorator
             case StepAnnotation step:
                 step.X += x;
                 step.Y += y;
+                break;
+
+            case PenAnnotation pen:
+                pen.PlaceFrom((PenAnnotation)pen.Copy(), x, y);
                 break;
         }
 
@@ -2136,6 +2173,7 @@ public sealed class CanvasView : Decorator
     {
         ArrowAnnotation arrow => Math.Abs(arrow.X2 - arrow.X1) < 4 && Math.Abs(arrow.Y2 - arrow.Y1) < 4,
         RectAnnotation rect => rect.Width < 4 || rect.Height < 4,
+        PenAnnotation pen => pen.Bounds is { Width: < 4, Height: < 4 },
         _ => false
     };
 
@@ -2167,6 +2205,7 @@ public sealed class CanvasView : Decorator
                     && image.Y >= rect.Y && image.Y <= rect.Y + rect.Height,
                 TextAnnotation text => BoundsOf(text).Contains(image),
                 StepAnnotation step => Distance(image, new Point(step.X, step.Y)) <= step.Radius,
+                PenAnnotation pen => OnPen(pen, image),
                 ArrowAnnotation arrow => DistanceToSegment(image,
                     new Point(arrow.X1, arrow.Y1), new Point(arrow.X2, arrow.Y2)) <= Math.Max(arrow.Thickness, 10),
                 _ => false
@@ -2205,6 +2244,24 @@ public sealed class CanvasView : Decorator
     };
 
     /// <summary>Whether the point sits on the border band of an unfilled box, with a little slack so a thin border stays grabbable.</summary>
+    /// <summary>Whether a point is on a hand-drawn line: near enough to any stretch of it, with the same generosity an arrow gets.</summary>
+    static bool OnPen(PenAnnotation pen, Point image)
+    {
+        var reach = Math.Max(pen.Thickness, 10);
+
+        for (var index = 0; index + 3 < pen.Points.Count; index += 2)
+        {
+            if (DistanceToSegment(image,
+                    new Point(pen.Points[index], pen.Points[index + 1]),
+                    new Point(pen.Points[index + 2], pen.Points[index + 3])) <= reach)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     bool OnBoxBorder(BoxAnnotation box, Point image)
     {
         var reach = Math.Max(box.BorderThickness, 8 / Scale);
@@ -2367,6 +2424,12 @@ public sealed class CanvasView : Decorator
                 var bounds = BoundsOf(text);
                 DrawSelectionBox(context, Outline(new Rect(
                     ToView(bounds.X, bounds.Y), ToView(bounds.Right, bounds.Bottom))));
+                break;
+
+            case PenAnnotation pen:
+                var drawn = pen.Bounds;
+                DrawSelectionBox(context, Outline(new Rect(
+                    ToView(drawn.X, drawn.Y), ToView(drawn.X + drawn.Width, drawn.Y + drawn.Height))));
                 break;
 
             case StepAnnotation step:

@@ -79,6 +79,9 @@ public static class Lucide
     /// <summary>scan. The four corners of a frame with nothing between them: the part left lit while the rest is dimmed.</summary>
     public const string Spotlight = "M3,7 V5 A2,2 0 0 1 5,3 H7 M17,3 H19 A2,2 0 0 1 21,5 V7 M21,17 V19 A2,2 0 0 1 19,21 H17 M7,21 H5 A2,2 0 0 1 3,19 V17 M9,9 H15 V15 H9 Z";
 
+    /// <summary>pencil. Drawing by hand.</summary>
+    public const string Pen = "M17,3 L21,7 L8,20 L3,21 L4,16 Z M14,6 L18,10";
+
     /// <summary>plus. Zooming in.</summary>
     public const string Plus = "M5,12 H19 M12,5 V19";
 

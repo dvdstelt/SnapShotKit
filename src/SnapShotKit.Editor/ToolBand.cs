@@ -332,6 +332,7 @@ public sealed class ToolBand : Border
                      (EditorTool.Select, Lucide.Select, "Select", "Select and move  (V)"),
                      (EditorTool.Arrow, Lucide.Arrow, "Arrow", "Arrow  (A)"),
                      (EditorTool.Box, Lucide.Box, "Box", "Box  (B)"),
+                     (EditorTool.Pen, Lucide.Pen, "Pen", "Pen  (P)\nDraws wherever the pointer goes."),
                      (EditorTool.Blur, Lucide.Blur, "Blur", "Blur  (L)"),
                      (EditorTool.Spotlight, Lucide.Spotlight, "Spotlight", "Spotlight  (O)\nDims everything except the regions dragged out."),
                      (EditorTool.Step, Lucide.Step, "Marker", "Numbered marker  (N)\nEach one takes the next number up."),
@@ -683,6 +684,7 @@ public sealed class ToolBand : Border
             BoxAnnotation => EditorTool.Box,
             BlurAnnotation => EditorTool.Blur,
             SpotlightAnnotation => EditorTool.Spotlight,
+            PenAnnotation => EditorTool.Pen,
             TextAnnotation => EditorTool.Text,
             StepAnnotation => EditorTool.Step,
 
@@ -704,8 +706,8 @@ public sealed class ToolBand : Border
         style.Show(styles, worn);
         stylesSection.IsVisible = styles.Count > 0;
 
-        colourGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box or EditorTool.Text or EditorTool.Step;
-        weightGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box;
+        colourGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box or EditorTool.Text or EditorTool.Step or EditorTool.Pen;
+        weightGroup.IsVisible = kind is EditorTool.Arrow or EditorTool.Box or EditorTool.Pen;
         headGroup.IsVisible = kind is EditorTool.Arrow;
         shapeGroup.IsVisible = kind is EditorTool.Box;
         hideGroup.IsVisible = kind is EditorTool.Blur;
@@ -766,6 +768,11 @@ public sealed class ToolBand : Border
                 dim.Show(spotlight.Dim);
                 break;
 
+            case PenAnnotation drawn:
+                colour.Show(drawn.Color);
+                weight.Show(drawn.Thickness);
+                break;
+
             case TextAnnotation text:
                 colour.Show(text.Color);
                 textSize.Show(text.FontSize);
@@ -785,6 +792,7 @@ public sealed class ToolBand : Border
                     EditorTool.Box => defaults.BoxBorderColor,
                     EditorTool.Text => defaults.TextColor,
                     EditorTool.Step => defaults.StepColor,
+                    EditorTool.Pen => defaults.PenColor,
                     _ => defaults.ArrowColor
                 });
 
@@ -792,7 +800,12 @@ public sealed class ToolBand : Border
                 textBackColour.Show(defaults.TextBackgroundColor);
                 stepSize.Show(defaults.StepDiameter);
 
-                weight.Show(tool == EditorTool.Box ? defaults.BoxBorderThickness : defaults.ArrowThickness);
+                weight.Show(tool switch
+                {
+                    EditorTool.Box => defaults.BoxBorderThickness,
+                    EditorTool.Pen => defaults.PenThickness,
+                    _ => defaults.ArrowThickness
+                });
                 head.Select(defaults.ArrowHeads);
                 shape.Select(defaults.BoxEllipse ? 1 : 0);
                 hide.Select((int)defaults.HideMode);
