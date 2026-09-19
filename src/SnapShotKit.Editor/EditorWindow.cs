@@ -514,6 +514,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Arrow", "A", () => SetTool(EditorTool.Arrow)),
             MenuEntry.Item("Box", "B", () => SetTool(EditorTool.Box)),
             MenuEntry.Item("Blur", "L", () => SetTool(EditorTool.Blur)),
+            MenuEntry.Item("Spotlight", "O", () => SetTool(EditorTool.Spotlight)),
             MenuEntry.Item("Text", "T", () => SetTool(EditorTool.Text)),
             MenuEntry.Item("Numbered marker", "N", () => SetTool(EditorTool.Step)),
             MenuEntry.Separator,
@@ -660,6 +661,14 @@ public sealed class EditorWindow : Window
 
             canvas.Defaults.BoxEllipse = ellipse;
             Apply<BoxAnnotation>("shape", box => box.Ellipse = ellipse);
+        };
+
+        band.DimChosen += amount =>
+        {
+            if (canvas is null) return;
+
+            canvas.Defaults.SpotlightDim = amount;
+            Apply<SpotlightAnnotation>("dim", spotlight => spotlight.Dim = amount);
         };
 
         band.HideChosen += mode =>
@@ -826,6 +835,7 @@ public sealed class EditorWindow : Window
         ArrowAnnotation => EditorTool.Arrow,
         BoxAnnotation => EditorTool.Box,
         BlurAnnotation => EditorTool.Blur,
+        SpotlightAnnotation => EditorTool.Spotlight,
         TextAnnotation => EditorTool.Text,
         StepAnnotation => EditorTool.Step,
         ImageAnnotation => EditorTool.Select,
@@ -1757,6 +1767,7 @@ public sealed class EditorWindow : Window
             ArrowAnnotation => "arrow selected",
             BoxAnnotation => "box selected",
             BlurAnnotation => "blur selected",
+            SpotlightAnnotation => "spotlight selected",
             TextAnnotation => "text selected",
             StepAnnotation => "marker selected",
             ImageAnnotation { IsCapture: true } => "capture selected",
@@ -2070,6 +2081,10 @@ public sealed class EditorWindow : Window
 
             case Key.L:
                 SetTool(EditorTool.Blur);
+                break;
+
+            case Key.O:
+                SetTool(EditorTool.Spotlight);
                 break;
 
             case Key.T:

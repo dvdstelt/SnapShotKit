@@ -82,6 +82,7 @@ public static class SnapshotRenderer
         Annotation? suppress)
     {
         var layers = snapshot.Document.Layers;
+        var dimmed = false;
 
         // In the order they are in. What is on top is the user's to decide, which is why every
         // annotation can be moved forward and back; a rule that always put one kind underneath
@@ -105,6 +106,17 @@ public static class SnapshotRenderer
 
                 case BlurAnnotation blur:
                     DrawBlur(context, snapshot, blurs, blur, index, origin, scale);
+                    break;
+
+                // All of them at once, where the first of them stands in the stack. One dimming
+                // with a hole for each, so a second spotlight is a second thing to look at rather
+                // than something that dims the first.
+                case SpotlightAnnotation when !dimmed:
+                    DrawSpotlights(context, snapshot, origin, scale, suppress);
+                    dimmed = true;
+                    break;
+
+                case SpotlightAnnotation:
                     break;
 
                 default:
@@ -301,6 +313,45 @@ public static class SnapshotRenderer
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The canvas dimmed, with every spotlight cut out of the dimming.
+    ///
+    /// As dark as the darkest of them asks for. There is one dimming, so it has one strength, and
+    /// the one who asked for most is the one who would notice getting less.
+    /// </summary>
+    static void DrawSpotlights(DrawingContext context, Snapshot snapshot, Point origin, double scale, Annotation? suppress)
+    {
+        var spotlights = snapshot.Document.Layers
+            .OfType<SpotlightAnnotation>()
+            .Where(spotlight => !ReferenceEquals(spotlight, suppress))
+            .ToList();
+
+        if (spotlights.Count == 0)
+        {
+            return;
+        }
+
+        Rect Placed(double x, double y, double width, double height) =>
+            new(origin.X + x * scale, origin.Y + y * scale, Math.Max(width, 1) * scale, Math.Max(height, 1) * scale);
+
+        var canvas = snapshot.Document.Canvas;
+        var holes = new GeometryGroup { FillRule = FillRule.NonZero };
+
+        foreach (var spotlight in spotlights)
+        {
+            holes.Children.Add(new RectangleGeometry(Placed(spotlight.X, spotlight.Y, spotlight.Width, spotlight.Height)));
+        }
+
+        var dimming = new CombinedGeometry(
+            GeometryCombineMode.Exclude,
+            new RectangleGeometry(Placed(canvas.X, canvas.Y, canvas.Width, canvas.Height)),
+            holes);
+
+        var strength = Math.Clamp(spotlights.Max(spotlight => spotlight.Dim), 1, 100) / 100.0;
+
+        context.DrawGeometry(new SolidColorBrush(Colors.Black, strength), null, dimming);
     }
 
     static Rect RegionOf(BlurAnnotation blur) => new(blur.X, blur.Y, Math.Max(blur.Width, 1), Math.Max(blur.Height, 1));

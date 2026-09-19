@@ -87,6 +87,8 @@ public sealed class ToolBand : Border
     readonly Control shapeGroup;
     readonly Segmented hide;
     readonly Control hideGroup;
+    readonly NumberField dim;
+    readonly Control dimGroup;
     readonly Control fillGroup;
     readonly Control blurGroup;
     readonly Control textSizeGroup;
@@ -133,6 +135,9 @@ public sealed class ToolBand : Border
         // None makes it a line, which is an arrow that points at nothing rather than another tool.
         head = new Segmented(["None", "Single", "Double"], index => HeadsChosen?.Invoke(index));
 
+        dim = new NumberField("Dim", SpotlightAnnotation.Presets.Select(step => (double)step).ToArray(), 1, 100,
+            value => DimChosen?.Invoke((int)Math.Round(value)));
+
         shape = new Segmented(["Rectangle", "Ellipse"], index => ShapeChosen?.Invoke(index == 1));
 
         // In order of how much each leaves behind. A blur can sometimes be worked backwards on
@@ -160,6 +165,7 @@ public sealed class ToolBand : Border
         headGroup = Group("Head", head);
         shapeGroup = Group("Shape", shape);
         hideGroup = Group("Hide with", hide);
+        dimGroup = Group("Dim", dim);
         fillGroup = Group("Fill", fill);
         blurGroup = Group("Blur", blur);
         textSizeGroup = Group("Size", textSize);
@@ -199,7 +205,7 @@ public sealed class ToolBand : Border
         foreach (var group in new[]
                  {
                      colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
-                     headGroup, shapeGroup, hideGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
+                     headGroup, shapeGroup, hideGroup, dimGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
                      cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, pictureGroup
                  })
         {
@@ -282,6 +288,7 @@ public sealed class ToolBand : Border
     public event Action<int>? HeadsChosen;
     public event Action<bool>? ShapeChosen;
     public event Action<HideMode>? HideChosen;
+    public event Action<int>? DimChosen;
     public event Action<bool>? FillChosen;
     public event Action<int>? BlurChosen;
     public event Action<double>? TextSizeChosen;
@@ -326,6 +333,7 @@ public sealed class ToolBand : Border
                      (EditorTool.Arrow, Lucide.Arrow, "Arrow", "Arrow  (A)"),
                      (EditorTool.Box, Lucide.Box, "Box", "Box  (B)"),
                      (EditorTool.Blur, Lucide.Blur, "Blur", "Blur  (L)"),
+                     (EditorTool.Spotlight, Lucide.Spotlight, "Spotlight", "Spotlight  (O)\nDims everything except the regions dragged out."),
                      (EditorTool.Step, Lucide.Step, "Marker", "Numbered marker  (N)\nEach one takes the next number up."),
                      (EditorTool.Text, Lucide.Text, "Text", "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
                      (EditorTool.Cut, Lucide.Cut, "Cut", "Cut out  (X)\nDrag down the picture to take a band of rows out of it, or across to take columns.\nWhat is left closes up.")
@@ -674,6 +682,7 @@ public sealed class ToolBand : Border
             ArrowAnnotation => EditorTool.Arrow,
             BoxAnnotation => EditorTool.Box,
             BlurAnnotation => EditorTool.Blur,
+            SpotlightAnnotation => EditorTool.Spotlight,
             TextAnnotation => EditorTool.Text,
             StepAnnotation => EditorTool.Step,
 
@@ -700,6 +709,7 @@ public sealed class ToolBand : Border
         headGroup.IsVisible = kind is EditorTool.Arrow;
         shapeGroup.IsVisible = kind is EditorTool.Box;
         hideGroup.IsVisible = kind is EditorTool.Blur;
+        dimGroup.IsVisible = kind is EditorTool.Spotlight;
         fillGroup.IsVisible = kind is EditorTool.Box;
         blurGroup.IsVisible = kind is EditorTool.Blur;
         textSizeGroup.IsVisible = kind is EditorTool.Text;
@@ -752,6 +762,10 @@ public sealed class ToolBand : Border
                 hide.Select((int)region.Mode);
                 break;
 
+            case SpotlightAnnotation spotlight:
+                dim.Show(spotlight.Dim);
+                break;
+
             case TextAnnotation text:
                 colour.Show(text.Color);
                 textSize.Show(text.FontSize);
@@ -782,6 +796,7 @@ public sealed class ToolBand : Border
                 head.Select(defaults.ArrowHeads);
                 shape.Select(defaults.BoxEllipse ? 1 : 0);
                 hide.Select((int)defaults.HideMode);
+                dim.Show(defaults.SpotlightDim);
                 fill.Select(defaults.BoxFilled ? 1 : 0);
                 fillColour.Show(defaults.BoxFillColor);
                 blur.Show(defaults.BlurStrength);

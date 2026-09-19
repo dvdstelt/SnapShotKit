@@ -16,6 +16,7 @@ namespace SnapShotKit.Editor;
 [JsonDerivedType(typeof(TextAnnotation), "text")]
 [JsonDerivedType(typeof(StepAnnotation), "step")]
 [JsonDerivedType(typeof(ImageAnnotation), "image")]
+[JsonDerivedType(typeof(SpotlightAnnotation), "spotlight")]
 public abstract class Annotation
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
@@ -112,6 +113,40 @@ public sealed class ArrowAnnotation : Annotation
 
     public override bool WearsStyle(Annotation style) => style is ArrowAnnotation arrow
         && Color == arrow.Color && Thickness == arrow.Thickness && Heads == arrow.Heads;
+}
+
+/// <summary>
+/// A region left at full brightness while everything else on the canvas is dimmed.
+///
+/// The opposite of a box: a box says "look here" by adding something to the place, and this says it
+/// by taking the rest of the picture away. It suits the screenshot where the thing to look at is
+/// large, a whole panel or a dialog, and an outline round it would be one more rectangle among the
+/// dozen the interface already has.
+///
+/// Every spotlight on a picture shares one dimming, with a hole in it for each. Two of them are
+/// two things to look at, not the second one dimming the first.
+/// </summary>
+public sealed class SpotlightAnnotation : RectAnnotation
+{
+    /// <summary>How dark everything else goes, 1 to 100.</summary>
+    public int Dim { get; set; } = 55;
+
+    public static readonly int[] Presets = [35, 55, 75];
+
+    public override Annotation Copy() => new SpotlightAnnotation
+    {
+        Id = Id, X = X, Y = Y, Width = Width, Height = Height, Dim = Dim
+    };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is SpotlightAnnotation spotlight)
+        {
+            Dim = spotlight.Dim;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is SpotlightAnnotation spotlight && Dim == spotlight.Dim;
 }
 
 /// <summary>How a hidden region hides what is under it.</summary>

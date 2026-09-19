@@ -13,6 +13,9 @@ public enum EditorTool
     Arrow,
     Box,
     Blur,
+
+    /// <summary>Dims everything but the region dragged out.</summary>
+    Spotlight,
     Text,
     Step,
 
@@ -65,6 +68,8 @@ public sealed class ToolDefaults
     public int BlurStrength { get; set; } = 35;
 
     public HideMode HideMode { get; set; }
+
+    public int SpotlightDim { get; set; } = 55;
 
     public double StepDiameter { get; set; } = 36;
     public string StepColor { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
@@ -137,6 +142,10 @@ public sealed class ToolDefaults
                 BlurStrength = blur.Strength;
                 HideMode = blur.Mode;
                 break;
+
+            case SpotlightAnnotation spotlight:
+                SpotlightDim = spotlight.Dim;
+                break;
         }
     }
 
@@ -159,6 +168,8 @@ public sealed class ToolDefaults
         StepAnnotation step => StepColor == step.Color && StepDiameter == step.Diameter,
 
         BlurAnnotation blur => BlurStrength == blur.Strength && HideMode == blur.Mode,
+
+        SpotlightAnnotation spotlight => SpotlightDim == spotlight.Dim,
 
         _ => false
     };
@@ -850,6 +861,8 @@ public sealed class CanvasView : Decorator
             Diameter = Defaults.StepDiameter,
             Color = Defaults.StepColor
         },
+
+        EditorTool.Spotlight => new SpotlightAnnotation { X = image.X, Y = image.Y, Dim = Defaults.SpotlightDim },
 
         _ => new BlurAnnotation { X = image.X, Y = image.Y, Strength = Defaults.BlurStrength, Mode = Defaults.HideMode }
     };

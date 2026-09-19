@@ -6,7 +6,7 @@ Press Print and the whole screen is captured immediately, so timing a capture is
 
 A region can also be followed while you scroll it: choose Scrolling capture, scroll the page at a steady pace, and press Print again or simply stop, and everything that passed through the region opens in the editor as one tall picture.
 
-The result opens in an editor for arrows and lines, boxes, ellipses and highlights, text and numbered markers, and regions hidden by a blur, by squares or by a solid bar, where the canvas can also be cropped or given transparent space around it, and is filed in a library grouped by day.
+The result opens in an editor for arrows and lines, boxes, ellipses and highlights, text and numbered markers, regions hidden by a blur, by squares or by a solid bar, and a spotlight that dims everything but what matters, where the canvas can also be cropped or given transparent space around it, and is filed in a library grouped by day.
 
 Annotations are kept as objects alongside the untouched capture, so anything drawn can be moved, restyled or removed next week, and the picture underneath is never modified. Exporting to PNG, JPEG or WebP renders the document rather than being the document, and asks first: transparency kept or flattened, WebP lossless or lossy and how hard to compress, JPEG quality, and whether the file lands in the exports folder or beside the picture it came from.
 
