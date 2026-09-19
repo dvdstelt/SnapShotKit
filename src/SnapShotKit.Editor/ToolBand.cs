@@ -87,6 +87,8 @@ public sealed class ToolBand : Border
     readonly Control shapeGroup;
     readonly Segmented hide;
     readonly Control hideGroup;
+    readonly Segmented tail;
+    readonly Control tailGroup;
     readonly NumberField dim;
     readonly NumberField lens;
     readonly Control zoomGroup;
@@ -139,6 +141,9 @@ public sealed class ToolBand : Border
 
         lens = new NumberField("Magnification", MagnifyAnnotation.Presets, 1, 16, value => LensChosen?.Invoke(value));
 
+        tail = new Segmented(["None", "Tail"], index => TailChosen?.Invoke(index == 1));
+        ToolTip.SetTip(tail, "A tail makes the text a callout.\nDrag the tip to what the words are about. It needs a background to be drawn in.");
+
         dim = new NumberField("Dim", SpotlightAnnotation.Presets.Select(step => (double)step).ToArray(), 1, 100,
             value => DimChosen?.Invoke((int)Math.Round(value)));
 
@@ -170,6 +175,7 @@ public sealed class ToolBand : Border
         shapeGroup = Group("Shape", shape);
         hideGroup = Group("Hide with", hide);
         dimGroup = Group("Dim", dim);
+        tailGroup = Group("Callout", tail);
         zoomGroup = Group("Magnification", lens);
         fillGroup = Group("Fill", fill);
         blurGroup = Group("Blur", blur);
@@ -210,7 +216,7 @@ public sealed class ToolBand : Border
         foreach (var group in new[]
                  {
                      colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
-                     headGroup, shapeGroup, hideGroup, dimGroup, zoomGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
+                     headGroup, shapeGroup, hideGroup, dimGroup, zoomGroup, tailGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
                      cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, pictureGroup
                  })
         {
@@ -295,6 +301,7 @@ public sealed class ToolBand : Border
     public event Action<HideMode>? HideChosen;
     public event Action<int>? DimChosen;
     public event Action<double>? LensChosen;
+    public event Action<bool>? TailChosen;
     public event Action<bool>? FillChosen;
     public event Action<int>? BlurChosen;
     public event Action<double>? TextSizeChosen;
@@ -725,6 +732,7 @@ public sealed class ToolBand : Border
         blurGroup.IsVisible = kind is EditorTool.Blur;
         textSizeGroup.IsVisible = kind is EditorTool.Text;
         textBackGroup.IsVisible = kind is EditorTool.Text;
+        tailGroup.IsVisible = kind is EditorTool.Text;
         stepNumberGroup.IsVisible = kind is EditorTool.Step;
         stepSizeGroup.IsVisible = kind is EditorTool.Step;
         cutDirectionGroup.IsVisible = kind is EditorTool.Cut;
@@ -790,6 +798,7 @@ public sealed class ToolBand : Border
                 colour.Show(text.Color);
                 textSize.Show(text.FontSize);
                 textBack.Select(text.HasBackground ? 1 : 0);
+                tail.Select(text.HasTail && text.HasBackground ? 1 : 0);
                 textBackColour.Show(text.HasBackground ? text.Background : defaults.TextBackgroundColor);
                 break;
 
@@ -810,6 +819,7 @@ public sealed class ToolBand : Border
                 });
 
                 textBack.Select(defaults.TextBackgrounded ? 1 : 0);
+                tail.Select(defaults.TextTailed && defaults.TextBackgrounded ? 1 : 0);
                 textBackColour.Show(defaults.TextBackgroundColor);
                 stepSize.Show(defaults.StepDiameter);
 

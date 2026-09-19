@@ -400,10 +400,41 @@ public sealed class TextAnnotation : Annotation
     /// <summary>How far the plate extends past the words, in image pixels.</summary>
     public double BackgroundPadding { get; set; } = 6;
 
+    /// <summary>
+    /// Whether the plate has a tail, which makes the text a callout: words that say which thing
+    /// they are about.
+    ///
+    /// A setting on text rather than a tool beside it, since a callout is text in every respect
+    /// but the tail: it is typed, sized, coloured and backed the same way, and a note that turns
+    /// out to need pointing at something should not have to be typed again. The tail is drawn in
+    /// the plate's colour, so it only shows on text that has one.
+    ///
+    /// Not part of a style. Where a tail points belongs to the one text it is on, and a style
+    /// carried onto another text would bring a tail aimed at somewhere it has never been.
+    /// </summary>
+    public bool HasTail { get; set; }
+
+    /// <summary>Where the tail's tip is, in image pixels. It stays put when the text is moved, because what it points at has not moved.</summary>
+    public double TailX { get; set; }
+
+    public double TailY { get; set; }
+
+    /// <summary>Gives the text a tail pointing down and to the left of it, which is where there is most often something to point at, unless it has one already.</summary>
+    public void PointSomewhere()
+    {
+        if (!HasTail)
+        {
+            HasTail = true;
+            TailX = X - 30;
+            TailY = Y + FontSize * 1.4 + 50;
+        }
+    }
+
     public override Annotation Copy() => new TextAnnotation
     {
         Id = Id, X = X, Y = Y, Text = Text, FontFamily = FontFamily, FontSize = FontSize, Color = Color,
-        Background = Background, BackgroundPadding = BackgroundPadding
+        Background = Background, BackgroundPadding = BackgroundPadding,
+        HasTail = HasTail, TailX = TailX, TailY = TailY
     };
 
     /// <summary>

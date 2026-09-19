@@ -39,6 +39,9 @@ enum DragKind
     Move,
     ArrowFrom,
     ArrowTo,
+
+    /// <summary>The tip of a callout's tail.</summary>
+    TextTail,
     RectTopLeft,
     RectTopRight,
     RectBottomLeft,
@@ -76,6 +79,9 @@ public sealed class ToolDefaults
     public HideMode HideMode { get; set; }
 
     public int SpotlightDim { get; set; } = 55;
+
+    /// <summary>Whether new text is a callout. Not adopted from a style, since a style has nowhere for a tail to point.</summary>
+    public bool TextTailed { get; set; }
 
     public double MagnifyZoom { get; set; } = 2;
 
@@ -875,7 +881,10 @@ public sealed class CanvasView : Decorator
             // and the first keystroke is the first letter rather than a replacement.
             Text = string.Empty,
             Color = Defaults.TextColor, FontFamily = Defaults.TextFont, FontSize = Defaults.TextSize,
-            Background = Defaults.TextBackgrounded ? Defaults.TextBackgroundColor : string.Empty
+            Background = Defaults.TextBackgrounded ? Defaults.TextBackgroundColor : string.Empty,
+            HasTail = Defaults.TextTailed && Defaults.TextBackgrounded,
+            TailX = image.X - 30,
+            TailY = image.Y + Defaults.TextSize * 1.4 + 50
         },
 
         EditorTool.Step => new StepAnnotation
@@ -969,6 +978,13 @@ public sealed class CanvasView : Decorator
 
             case RectAnnotation rect when dragBaseline is RectAnnotation baseline:
                 Apply(rect, baseline, delta, image);
+                break;
+
+            // The tip goes where it is dragged. Moving the words leaves it where it was, because
+            // what it points at has not moved.
+            case TextAnnotation text when dragging == DragKind.TextTail:
+                text.TailX = image.X;
+                text.TailY = image.Y;
                 break;
 
             case TextAnnotation text when dragBaseline is TextAnnotation baseline:
@@ -2238,6 +2254,7 @@ public sealed class CanvasView : Decorator
     {
         (ArrowAnnotation arrow, DragKind.ArrowFrom) => new Point(arrow.X1, arrow.Y1),
         (ArrowAnnotation arrow, DragKind.ArrowTo) => new Point(arrow.X2, arrow.Y2),
+        (TextAnnotation text, DragKind.TextTail) => new Point(text.TailX, text.TailY),
         (RectAnnotation rect, _) => AnchorOf(grip, new Rect(rect.X, rect.Y, rect.Width, rect.Height)),
         _ => default
     };
@@ -2256,7 +2273,6 @@ public sealed class CanvasView : Decorator
         _ => default
     };
 
-    /// <summary>Whether the point sits on the border band of an unfilled box, with a little slack so a thin border stays grabbable.</summary>
     /// <summary>Whether a point is on a hand-drawn line: near enough to any stretch of it, with the same generosity an arrow gets.</summary>
     static bool OnPen(PenAnnotation pen, Point image)
     {
@@ -2275,6 +2291,7 @@ public sealed class CanvasView : Decorator
         return false;
     }
 
+    /// <summary>Whether the point sits on the border band of an unfilled box, with a little slack so a thin border stays grabbable.</summary>
     bool OnBoxBorder(BoxAnnotation box, Point image)
     {
         var reach = Math.Max(box.BorderThickness, 8 / Scale);
@@ -2346,7 +2363,11 @@ public sealed class CanvasView : Decorator
                 yield return (DragKind.RectLeft, ToView(rect.X, midY));
                 break;
 
-            // Text has no handles. Its size is its font size, which belongs in the panel rather than
+            case TextAnnotation { HasTail: true, HasBackground: true } callout:
+                yield return (DragKind.TextTail, ToView(callout.TailX, callout.TailY));
+                break;
+
+            // Text has no other handles. Its size is its font size, which belongs in the panel rather than
             // on a corner grip that would distort it.
         }
     }

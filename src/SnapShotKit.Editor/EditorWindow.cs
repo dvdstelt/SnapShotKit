@@ -751,6 +751,37 @@ public sealed class EditorWindow : Window
             UpdateChrome();
         };
 
+        band.TailChosen += tailed =>
+        {
+            if (canvas is null) return;
+
+            canvas.Defaults.TextTailed = tailed;
+
+            // A tail is drawn in the plate's colour, so asking for one asks for a plate as well.
+            if (tailed)
+            {
+                canvas.Defaults.TextBackgrounded = true;
+            }
+
+            Apply<TextAnnotation>("callout", text =>
+            {
+                if (!tailed)
+                {
+                    text.HasTail = false;
+                    return;
+                }
+
+                if (!text.HasBackground)
+                {
+                    text.Background = canvas.Defaults.TextBackgroundColor;
+                }
+
+                text.PointSomewhere();
+            });
+
+            UpdateChrome();
+        };
+
         band.TextBackColourChosen += background =>
         {
             if (canvas is null) return;

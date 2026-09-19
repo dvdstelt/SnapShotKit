@@ -235,14 +235,62 @@ public static class SnapshotRenderer
         {
             var padding = text.BackgroundPadding * scale;
 
-            context.FillRectangle(BrushFor(text.Background), new Rect(
+            var plate = new Rect(
                 at.X - padding,
                 at.Y - padding,
                 formatted.Width + 2 * padding,
-                formatted.Height + 2 * padding));
+                formatted.Height + 2 * padding);
+
+            if (text.HasTail)
+            {
+                DrawTail(context, BrushFor(text.Background), plate,
+                    new Point(origin.X + text.TailX * scale, origin.Y + text.TailY * scale));
+            }
+
+            context.FillRectangle(BrushFor(text.Background), plate);
         }
 
         context.DrawText(formatted, at);
+    }
+
+    /// <summary>
+    /// A callout's tail: a triangle from the middle of the plate to the tip.
+    ///
+    /// From the middle rather than from an edge, with the plate painted over it afterwards, so
+    /// only the part outside the plate shows. That way there is no working out which edge the tail
+    /// leaves by or where along it, and no seam where it crosses a corner: it works the same
+    /// whichever way the tip lies. A tip inside the plate is a tail with nowhere to go, and is not
+    /// drawn.
+    /// </summary>
+    static void DrawTail(DrawingContext context, IBrush brush, Rect plate, Point tip)
+    {
+        if (plate.Contains(tip))
+        {
+            return;
+        }
+
+        var span = tip - plate.Center;
+        var length = Math.Sqrt(span.X * span.X + span.Y * span.Y);
+
+        if (length < 1)
+        {
+            return;
+        }
+
+        // As wide where it leaves as the plate can carry: a third of its shorter side either way.
+        var across = new Vector(-span.Y / length, span.X / length) * (Math.Min(plate.Width, plate.Height) * 0.33);
+
+        var tail = new StreamGeometry();
+
+        using (var sink = tail.Open())
+        {
+            sink.BeginFigure(tip, true);
+            sink.LineTo(plate.Center + across);
+            sink.LineTo(plate.Center - across);
+            sink.EndFigure(true);
+        }
+
+        context.DrawGeometry(brush, null, tail);
     }
 
     /// <summary>A numbered marker: a filled disc with its number centred in it.</summary>
