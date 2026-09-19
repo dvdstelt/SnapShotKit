@@ -516,6 +516,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Pen", "P", () => SetTool(EditorTool.Pen)),
             MenuEntry.Item("Blur", "L", () => SetTool(EditorTool.Blur)),
             MenuEntry.Item("Magnify", "G", () => SetTool(EditorTool.Magnify)),
+            MenuEntry.Item("Take a colour from the picture", "I", PickColour),
             MenuEntry.Item("Spotlight", "O", () => SetTool(EditorTool.Spotlight)),
             MenuEntry.Item("Text", "T", () => SetTool(EditorTool.Text)),
             MenuEntry.Item("Numbered marker", "N", () => SetTool(EditorTool.Step)),
@@ -605,38 +606,8 @@ public sealed class EditorWindow : Window
             UpdateChrome();
         };
 
-        band.ColourChosen += colour =>
-        {
-            if (canvas is null) return;
-
-            switch (BandTarget())
-            {
-                case EditorTool.Box:
-                    canvas.Defaults.BoxBorderColor = colour;
-                    Apply<BoxAnnotation>("colour", box => box.BorderColor = colour);
-                    break;
-
-                case EditorTool.Text:
-                    canvas.Defaults.TextColor = colour;
-                    Apply<TextAnnotation>("colour", text => text.Color = colour);
-                    break;
-
-                case EditorTool.Step:
-                    canvas.Defaults.StepColor = colour;
-                    Apply<StepAnnotation>("colour", step => step.Color = colour);
-                    break;
-
-                case EditorTool.Pen:
-                    canvas.Defaults.PenColor = colour;
-                    Apply<PenAnnotation>("colour", pen => pen.Color = colour);
-                    break;
-
-                default:
-                    canvas.Defaults.ArrowColor = colour;
-                    Apply<ArrowAnnotation>("colour", arrow => arrow.Color = colour);
-                    break;
-            }
-        };
+        band.ColourChosen += ApplyColour;
+        band.PickColourRequested += PickColour;
 
         band.WeightChosen += weight =>
         {
@@ -937,6 +908,13 @@ public sealed class EditorWindow : Window
         canvas.Abandoned += () => { if (undo.Count > 0) undo.Pop(); };
         canvas.Changed += () => { dirty = true; UpdateChrome(); };
         canvas.SelectionChanged += () => { lastBandEdit = null; UpdateChrome(); };
+
+        canvas.ColourPicked += colour =>
+        {
+            ApplyColour(colour);
+            UpdateChrome();
+            Report($"Took {colour} from the picture");
+        };
         canvas.ZoomChanged += () => band.ShowZoom(canvas.EffectiveScale);
         canvas.CanvasResizeStarted += PinCanvas;
         canvas.CanvasResizeMoved += MoveCanvas;
@@ -1083,6 +1061,67 @@ public sealed class EditorWindow : Window
 
         canvas.Focus();
         UpdateChrome();
+    }
+
+    /// <summary>
+    /// Sets the colour of whatever the sidebar is showing: the selection when there is one, and the
+    /// tool in hand, for what it draws next, when there is not. The swatches and the eyedropper
+    /// both end here, so a colour taken off the picture behaves exactly like one picked from the row.
+    /// </summary>
+    void ApplyColour(string colour)
+    {
+        if (canvas is null) return;
+
+        switch (BandTarget())
+        {
+            case EditorTool.Box:
+                canvas.Defaults.BoxBorderColor = colour;
+                Apply<BoxAnnotation>("colour", box => box.BorderColor = colour);
+                break;
+
+            case EditorTool.Text:
+                canvas.Defaults.TextColor = colour;
+                Apply<TextAnnotation>("colour", text => text.Color = colour);
+                break;
+
+            case EditorTool.Step:
+                canvas.Defaults.StepColor = colour;
+                Apply<StepAnnotation>("colour", step => step.Color = colour);
+                break;
+
+            case EditorTool.Pen:
+                canvas.Defaults.PenColor = colour;
+                Apply<PenAnnotation>("colour", pen => pen.Color = colour);
+                break;
+
+            default:
+                canvas.Defaults.ArrowColor = colour;
+                Apply<ArrowAnnotation>("colour", arrow => arrow.Color = colour);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Arms the eyedropper: the next click on the canvas takes the colour under it.
+    ///
+    /// Only where a colour would go anywhere. With a tool or a selection that has no colour to set,
+    /// a blur or a lens, the click would take a colour and do nothing with it.
+    /// </summary>
+    void PickColour()
+    {
+        if (canvas is null)
+        {
+            return;
+        }
+
+        if (BandTarget() is not (EditorTool.Arrow or EditorTool.Box or EditorTool.Text or EditorTool.Step or EditorTool.Pen))
+        {
+            Report("Nothing here takes a colour. Choose an arrow, box, pen, text or marker first.");
+            return;
+        }
+
+        canvas.PickingColour = true;
+        Report("Click the picture to take a colour from it. Esc to cancel.");
     }
 
     /// <summary>
@@ -2117,9 +2156,18 @@ public sealed class EditorWindow : Window
                 canvas.DeleteSelected();
                 break;
 
+            case Key.Escape when canvas.PickingColour:
+                canvas.PickingColour = false;
+                Report("Colour not taken");
+                break;
+
             case Key.Escape:
                 menu.CloseAll();
                 canvas.Select(null);
+                break;
+
+            case Key.I:
+                PickColour();
                 break;
 
             case Key.V:

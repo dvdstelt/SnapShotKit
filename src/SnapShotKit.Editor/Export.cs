@@ -132,6 +132,33 @@ public static class Export
     }
 
     /// <summary>The rendered canvas as an ImageSharp image, which is what every file is written from.</summary>
+    /// <summary>
+    /// The colour of the canvas at a point, as it would come out in an export, or null where there
+    /// is nothing: outside the canvas, or on a part of it no picture covers.
+    ///
+    /// One pixel is rendered for the purpose, through the same renderer as everything else, rather
+    /// than the colour being looked up in the capture's bitmap. What somebody points at is what
+    /// they can see, which may be a pasted picture, a filled box or the blurred version of either,
+    /// and only the renderer knows what that comes to.
+    /// </summary>
+    /// <param name="image">The point, in image pixels as the document measures them.</param>
+    public static string? ColourAt(Snapshot snapshot, BlurCache blurs, Avalonia.Point image)
+    {
+        var at = snapshot.Layout.ToLaid(new Rect(Math.Floor(image.X), Math.Floor(image.Y), 1, 1));
+
+        using var rendered = new RenderTargetBitmap(new PixelSize(1, 1), new Vector(96, 96));
+
+        using (var context = rendered.CreateDrawingContext())
+        {
+            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, 1, 1), new Rect(at.X, at.Y, 1, 1));
+        }
+
+        using var pixel = ToImage(rendered);
+        var colour = pixel[0, 0];
+
+        return colour.A < 8 ? null : $"#{colour.R:X2}{colour.G:X2}{colour.B:X2}";
+    }
+
     static Image<Bgra32> ToImage(RenderTargetBitmap rendered)
     {
         var size = rendered.PixelSize;

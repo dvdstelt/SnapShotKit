@@ -168,7 +168,17 @@ public sealed class ToolBand : Border
 
         // Every group is captioned, the colours included, so each setting says what it is without
         // leaning on what happens to sit beside it.
-        colourGroup = Group("Colour", colour);
+        // The eyedropper sits under the swatches it adds to, as words rather than as one more
+        // square in the row, where it would read as a colour.
+        colourGroup = Group("Colour", new StackPanel
+        {
+            Spacing = Tokens.Space.S1,
+            Children =
+            {
+                colour,
+                TextAction("Take from the picture  (I)", () => PickColourRequested?.Invoke())
+            }
+        });
         fillColourGroup = Group("Fill colour", fillColour);
         weightGroup = Group("Weight", weight);
         headGroup = Group("Head", head);
@@ -302,6 +312,7 @@ public sealed class ToolBand : Border
     public event Action<int>? DimChosen;
     public event Action<double>? LensChosen;
     public event Action<bool>? TailChosen;
+    public event Action? PickColourRequested;
     public event Action<bool>? FillChosen;
     public event Action<int>? BlurChosen;
     public event Action<double>? TextSizeChosen;

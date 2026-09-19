@@ -739,6 +739,23 @@ public sealed class CanvasView : Decorator
 
         Focus();
 
+        if (PickingColour)
+        {
+            // One click, one colour, and back to whatever was being done. A click on nothing, off
+            // the canvas or on a transparent part of it, ends it too: there was no colour there
+            // to take, and leaving the mode armed would make the next ordinary click a surprise.
+            PickingColour = false;
+
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+                && Export.ColourAt(snapshot, blurs, ToImage(e.GetPosition(this))) is { } picked)
+            {
+                ColourPicked?.Invoke(picked);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         // With space held the press takes hold of the picture rather than of anything on it.
         if (Panning)
         {
@@ -1138,6 +1155,27 @@ public sealed class CanvasView : Decorator
     }
 
     static Rect BoundsOf(RectAnnotation rect) => new(rect.X, rect.Y, rect.Width, rect.Height);
+
+    bool pickingColour;
+
+    /// <summary>
+    /// While true, the next click on the canvas takes the colour under it instead of drawing or
+    /// selecting, and hands it to <see cref="ColourPicked"/>.
+    ///
+    /// For matching an annotation to the picture it sits on: the exact blue of the application's
+    /// own buttons, or the background of a panel that a box is about to cover part of.
+    /// </summary>
+    public bool PickingColour
+    {
+        get => pickingColour;
+        set
+        {
+            pickingColour = value;
+            ShowCursor();
+        }
+    }
+
+    public event Action<string>? ColourPicked;
 
     /// <summary>When the selection was last nudged, and what it was, so a run of key presses can be told from the start of a new one.</summary>
     DateTime nudgedAt;
@@ -2015,6 +2053,12 @@ public sealed class CanvasView : Decorator
     /// </summary>
     void ShowCursor(Point? over = null)
     {
+        if (PickingColour)
+        {
+            Cursor = new Cursor(StandardCursorType.Cross);
+            return;
+        }
+
         if (Panning)
         {
             // An open hand while it is only ready, and the move cursor while it actually has hold
