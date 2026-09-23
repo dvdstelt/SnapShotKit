@@ -354,6 +354,10 @@ public sealed class EditorWindow : Window
         scroller.VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled;
 
         Title = "SnapShotKit";
+
+        // Nothing to work on, so the captures to choose from are put in front of the user rather
+        // than left below the edge for them to find.
+        recent.Offer();
     }
 
     Blueprint ShowCanvas()

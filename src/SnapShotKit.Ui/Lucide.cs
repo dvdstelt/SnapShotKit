@@ -110,10 +110,6 @@ public static class Lucide
     public const string Location = "M10,13 a5,5 0 0 0 7.54,0.54 l3,-3 a5,5 0 0 0 -7.07,-7.07 l-1.72,1.71 "
         + "M14,11 a5,5 0 0 0 -7.54,-0.54 l-3,3 a5,5 0 0 0 7.07,7.07 l1.71,-1.71";
 
-    /// <summary>copy. Two sheets, one over the other: the picture onto the clipboard.</summary>
-    public const string Copy = "M10,8 H20 A2,2 0 0 1 22,10 V20 A2,2 0 0 1 20,22 H10 A2,2 0 0 1 8,20 V10 A2,2 0 0 1 10,8 Z "
-        + "M4,16 C2.9,16 2,15.1 2,14 V4 C2,2.9 2.9,2 4,2 H14 C15.1,2 16,2.9 16,4";
-
     /// <summary>
     /// Builds a glyph at a given size.
     ///

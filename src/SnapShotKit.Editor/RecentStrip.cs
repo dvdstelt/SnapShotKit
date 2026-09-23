@@ -231,6 +231,7 @@ public sealed class RecentStrip : Border
         get => pinned;
         set
         {
+            var wasPinned = pinned;
             pinned = value;
             pinHost.Child = PinButton();
             Handle.IsVisible = !value;
@@ -246,7 +247,10 @@ public sealed class RecentStrip : Border
                 IsHitTestVisible = true;
                 slide.Y = 0;
             }
-            else if (!IsPointerOver)
+            // Only when it is being let go. Told it is unpinned when it already was, it stays as it
+            // is, which may be up: an empty editor offers the strip before the window has said
+            // whether it is pinned.
+            else if (wasPinned && !IsPointerOver)
             {
                 Retract();
             }
@@ -314,6 +318,16 @@ public sealed class RecentStrip : Border
     /// </summary>
     protected override Size MeasureOverride(Size availableSize) =>
         base.MeasureOverride(availableSize).WithWidth(0);
+
+    /// <summary>
+    /// Brings the strip up without waiting for the pointer to fetch it, and leaves it there until
+    /// the pointer has been over it and left.
+    ///
+    /// For an editor with nothing on the canvas, where the strip is the thing to choose from and
+    /// making somebody find the edge first would hide the one useful thing on screen. It is not
+    /// pinned by this: once it has been used and left, it goes like it always does.
+    /// </summary>
+    public void Offer() => Raise();
 
     /// <summary>Brings the strip up over the picture, unless it is already up.</summary>
     void Raise()
@@ -432,9 +446,8 @@ public sealed class RecentStrip : Border
     /// The open capture is ringed in the accent and lifted off the ground, so the strip always says
     /// which one is on the canvas without having to hide it from the list.
     ///
-    /// Under the pointer the picture dims and five controls come up over it: copy in the middle,
-    /// since that is what a capture on the strip is most often wanted for, and the rest in the
-    /// corners. They stay out of sight otherwise, because the strip is a row of pictures and a
+    /// Under the pointer the picture dims and a control comes up in each corner. The middle is left
+    /// clear, since a click there opens the capture. They stay out of sight otherwise, because the strip is a row of pictures and a
     /// permanent row of buttons over them would compete with the only thing the strip is for. A
     /// pinned capture keeps its pin showing, which is the one thing about it the picture cannot say.
     /// </summary>
@@ -476,25 +489,7 @@ public sealed class RecentStrip : Border
                 Tokens.AccentBrush, lit: false, _ => CopyLocationRequested?.Invoke(path)),
             HorizontalAlignment.Right, VerticalAlignment.Bottom);
 
-        var copy = Badge(stroke => new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = Tokens.Space.S1,
-                Margin = new Thickness(Tokens.Space.S2, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Children =
-                {
-                    Lucide.Icon(Lucide.Copy, 12, stroke),
-                    Labels.Body("Copy", 12, stroke)
-                }
-            },
-            $"Copy {item.Name} to the clipboard",
-            Tokens.AccentBrush, lit: false, _ => CopyRequested?.Invoke(path));
-
-        copy.HorizontalAlignment = HorizontalAlignment.Center;
-        copy.VerticalAlignment = VerticalAlignment.Center;
-
-        Control[] onHover = [scrim, remove, delete, location, copy];
+        Control[] onHover = [scrim, remove, delete, location];
 
         foreach (var control in onHover)
         {
@@ -510,7 +505,7 @@ public sealed class RecentStrip : Border
             Background = Tokens.Neutral200Brush,
             CornerRadius = Tokens.Radius,
             ClipToBounds = true,
-            Child = new Panel { Children = { picture, scrim, copy, remove, pin, delete, location } },
+            Child = new Panel { Children = { picture, scrim, remove, pin, delete, location } },
             BorderBrush = open ? Tokens.AccentBrush : Brushes.Transparent,
             BorderThickness = new Thickness(open ? 2 : 0),
             BoxShadow = open ? Tokens.ShadowMd : default
