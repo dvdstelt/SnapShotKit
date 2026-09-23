@@ -101,6 +101,19 @@ public static class Lucide
     /// <summary>folder. The library.</summary>
     public const string Library = "M4,20 A2,2 0 0 1 2,18 V5 A2,2 0 0 1 4,3 H9 L12,6 H20 A2,2 0 0 1 22,8 V18 A2,2 0 0 1 20,20 Z";
 
+    /// <summary>pin. Keeping something where it is: the strip up, or a capture at the front of it.</summary>
+    public const string Pin = "M12,17 V22 M9,10.76 a2,2 0 0 1 -1.11,1.79 l-1.78,0.9 A2,2 0 0 0 5,15.24 V16 "
+        + "a1,1 0 0 0 1,1 H18 a1,1 0 0 0 1,-1 V15.24 a2,2 0 0 0 -1.11,-1.79 l-1.78,-0.9 A2,2 0 0 1 15,10.76 V7 "
+        + "a1,1 0 0 1 1,-1 a2,2 0 0 0 0,-4 H8 a2,2 0 0 0 0,4 a1,1 0 0 1 1,1 Z";
+
+    /// <summary>link. Where a file is, rather than what is in it.</summary>
+    public const string Location = "M10,13 a5,5 0 0 0 7.54,0.54 l3,-3 a5,5 0 0 0 -7.07,-7.07 l-1.72,1.71 "
+        + "M14,11 a5,5 0 0 0 -7.54,-0.54 l-3,3 a5,5 0 0 0 7.07,7.07 l1.71,-1.71";
+
+    /// <summary>copy. Two sheets, one over the other: the picture onto the clipboard.</summary>
+    public const string Copy = "M10,8 H20 A2,2 0 0 1 22,10 V20 A2,2 0 0 1 20,22 H10 A2,2 0 0 1 8,20 V10 A2,2 0 0 1 10,8 Z "
+        + "M4,16 C2.9,16 2,15.1 2,14 V4 C2,2.9 2.9,2 4,2 H14 C15.1,2 16,2.9 16,4";
+
     /// <summary>
     /// Builds a glyph at a given size.
     ///

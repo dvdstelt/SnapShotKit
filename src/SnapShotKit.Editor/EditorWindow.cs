@@ -147,7 +147,11 @@ public sealed class EditorWindow : Window
         recent = new RecentStrip();
         recent.Chosen += OpenSnapshot;
         recent.CopyRequested += CopySnapshot;
+        recent.CopyLocationRequested += CopyLocation;
         recent.DeleteRequested += (path, answered) => _ = DeleteSnapshotAsync(path, answered);
+        recent.RemoveRequested += RemoveFromStrip;
+        recent.PinRequested += PinToStrip;
+        recent.PinnedChanged += PinStrip;
 
         status = Labels.Body(string.Empty, 12, Tokens.Neutral600Brush);
 
@@ -224,15 +228,40 @@ public sealed class EditorWindow : Window
         DockPanel.SetDock(footer, Dock.Bottom);
         layout.Children.Add(footer);
 
-        DockPanel.SetDock(recent, Dock.Bottom);
-        layout.Children.Add(recent);
+        // The picture, the sidebar beside it and the strip below both. A grid rather than more of
+        // the dock, so the strip is in one place whether or not it is pinned: pinned, the picture
+        // and the sidebar stop above it; unpinned, they run to the bottom and the strip slides up
+        // over them. Moving the strip between two parents instead would take its context menu
+        // with it, and a popup moved to a new parent stops opening.
+        //
+        // The strip spans both columns, so it keeps the whole width of the window whether it is
+        // docked or floating, and the sidebar stops above it rather than beside it.
+        //
+        // Clipped, because a strip waiting below the edge is only moved out of the way, not taken
+        // out of the layout, and would otherwise be drawn over the status line.
+        var middle = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            RowDefinitions = new RowDefinitions("*,Auto"),
+            ClipToBounds = true
+        };
 
-        // After the strip along the bottom, so the sidebar stops above it rather than running the
-        // whole height of the window, which leaves the recent captures their full width.
-        DockPanel.SetDock(band.Sidebar, Dock.Right);
-        layout.Children.Add(band.Sidebar);
+        Grid.SetColumn(band.Sidebar, 1);
+        middle.Children.Add(mat);
+        middle.Children.Add(band.Sidebar);
 
-        layout.Children.Add(mat);
+        // Along the foot of the picture only, not under the sidebar: its lowest settings are still
+        // meant to be reachable without the strip coming up over them.
+        Grid.SetRowSpan(recent.Handle, 2);
+        middle.Children.Add(recent.Handle);
+
+        Grid.SetRow(recent, 1);
+        Grid.SetColumnSpan(recent, 2);
+        middle.Children.Add(recent);
+
+        LayOutStrip(state.Strip.Pinned);
+
+        layout.Children.Add(middle);
         Content = layout;
 
         KeyDown += OnKeyDown;
@@ -270,7 +299,7 @@ public sealed class EditorWindow : Window
         var heading = Labels.Heading("NOTHING OPEN", 13, 0.18, Tokens.Neutral600Brush);
         heading.HorizontalAlignment = HorizontalAlignment.Center;
 
-        var hint = Labels.Body("Choose a capture from the strip below, press Print to take one, or Ctrl+V to paste a picture.",
+        var hint = Labels.Body("Choose a capture from the strip along the bottom edge, press Print to take one, or Ctrl+V to paste a picture.",
             13, Tokens.Neutral500Brush);
         hint.HorizontalAlignment = HorizontalAlignment.Center;
 
@@ -542,7 +571,13 @@ public sealed class EditorWindow : Window
 
         menu.Add("Library", () =>
         [
-            MenuEntry.Item("Open library", "Ctrl+L", OpenLibrary)
+            MenuEntry.Item("Open library", "Ctrl+L", OpenLibrary),
+            MenuEntry.Separator,
+            MenuEntry.Item(recent.Pinned ? "Let the recent strip hide" : "Keep the recent strip up", null,
+                () => PinStrip(!recent.Pinned)),
+            .. state.Strip.RemovedCaptures.Count == 0
+                ? Array.Empty<MenuEntry>()
+                : [MenuEntry.Item("Put removed captures back on the strip", null, RestoreStrip)]
         ]);
 
         menu.Add("Help", () =>
@@ -1772,6 +1807,14 @@ public sealed class EditorWindow : Window
             return;
         }
 
+        // Opened on purpose, from the library or a file manager, which is somebody wanting it back
+        // in their working set. Without this, a capture taken off the strip could only ever come
+        // back by putting every one of them back.
+        if (state.Strip.RemovedCaptures.Contains(path))
+        {
+            state.ChangeStrip(strip => strip.RemovedCaptures.Remove(path));
+        }
+
         Present(next, note ?? $"Opened {Path.GetFileName(next.Path)}");
     }
 
@@ -1826,9 +1869,99 @@ public sealed class EditorWindow : Window
         thumbnailWork.Dispose();
         thumbnailWork = new CancellationTokenSource();
 
-        var entries = SnapshotLibrary.List().Take(RecentCount).ToList();
-        recent.Show(SnapshotItem.Build(entries, thumbnails, thumbnailWork.Token), snapshot is { OnDisk: true } ? snapshot.Path : string.Empty);
+        var library = SnapshotLibrary.List();
+        var pinned = state.Strip.PinnedCaptures.ToHashSet(StringComparer.Ordinal);
+        var removed = state.Strip.RemovedCaptures.ToHashSet(StringComparer.Ordinal);
+
+        // Pinned captures first, in the order they were pinned, and never counted against the
+        // newest: pinning something is asking for it to stay, however many captures come after.
+        var byPath = library.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
+        var front = state.Strip.PinnedCaptures.Where(byPath.ContainsKey).Select(path => byPath[path]);
+        var rest = library.Where(entry => !pinned.Contains(entry.Path) && !removed.Contains(entry.Path)).Take(RecentCount);
+
+        var entries = front.Concat(rest).ToList();
+        recent.Show(SnapshotItem.Build(entries, thumbnails, thumbnailWork.Token),
+            snapshot is { OnDisk: true } ? snapshot.Path : string.Empty, pinned);
     }
+
+    /// <summary>Puts the strip below the picture, or lets it float over the picture's lower edge.</summary>
+    void LayOutStrip(bool pinned)
+    {
+        Grid.SetRowSpan(mat, pinned ? 1 : 2);
+        Grid.SetRowSpan(band.Sidebar, pinned ? 1 : 2);
+        recent.Pinned = pinned;
+    }
+
+    void PinStrip(bool pinned)
+    {
+        state.ChangeStrip(strip => strip.Pinned = pinned);
+        LayOutStrip(pinned);
+    }
+
+    /// <summary>
+    /// Pins a capture to the front of the strip, or lets it go.
+    ///
+    /// A pinned capture that had been taken off the strip is put back on it: pinning is the
+    /// clearer of the two requests, and a capture both pinned and removed would be nowhere.
+    /// </summary>
+    void PinToStrip(string path, bool pin)
+    {
+        state.ChangeStrip(strip =>
+        {
+            strip.PinnedCaptures.Remove(path);
+            strip.RemovedCaptures.Remove(path);
+
+            if (pin)
+            {
+                strip.PinnedCaptures.Add(path);
+            }
+        });
+
+        RefreshRecent();
+        Report(pin ? $"Pinned {Path.GetFileName(path)} to the front of the strip" : $"Unpinned {Path.GetFileName(path)}");
+    }
+
+    /// <summary>
+    /// Takes a capture off the strip, leaving it where it is on disk.
+    ///
+    /// The strip is a working set rather than the library, and a shot that is finished with, or
+    /// was a mistake worth keeping, should be able to leave it without being deleted. Opening it
+    /// again from the library brings it back.
+    /// </summary>
+    void RemoveFromStrip(string path)
+    {
+        state.ChangeStrip(strip =>
+        {
+            strip.PinnedCaptures.Remove(path);
+
+            if (!strip.RemovedCaptures.Contains(path))
+            {
+                strip.RemovedCaptures.Add(path);
+            }
+        });
+
+        RefreshRecent();
+        Report($"Took {Path.GetFileName(path)} off the strip. It is still in the library.");
+    }
+
+    /// <summary>Puts every capture taken off the strip back on it.</summary>
+    void RestoreStrip()
+    {
+        state.ChangeStrip(strip => strip.RemovedCaptures.Clear());
+        RefreshRecent();
+        Report("Every capture is back on the strip");
+    }
+
+    /// <summary>
+    /// Puts a capture's location on the clipboard as text.
+    ///
+    /// The snapshot file itself, since that is the capture: an export may not exist, and if it
+    /// does there may be several.
+    /// </summary>
+    void CopyLocation(string path) =>
+        Report(WaylandClipboard.TryCopyText(path, out var error)
+            ? $"Copied the location of {Path.GetFileName(path)}"
+            : $"Could not copy: {error}");
 
     /// <summary>Points the tools, the sidebar, the menu bar and the status line at whatever is true now.</summary>
     void UpdateChrome()

@@ -98,7 +98,13 @@ public static class WaylandClipboard
     }
 
     /// <summary>Copies PNG bytes, returning false and a reason rather than throwing.</summary>
-    public static bool TryCopyPng(byte[] png, out string error)
+    public static bool TryCopyPng(byte[] png, out string error) => TryCopy(png, "image/png", out error);
+
+    /// <summary>Copies a line of text, such as a file's location, returning false and a reason rather than throwing.</summary>
+    public static bool TryCopyText(string text, out string error) =>
+        TryCopy(System.Text.Encoding.UTF8.GetBytes(text), "text/plain;charset=utf-8", out error);
+
+    static bool TryCopy(byte[] content, string type, out string error)
     {
         try
         {
@@ -114,7 +120,7 @@ public static class WaylandClipboard
             };
 
             startInfo.ArgumentList.Add("--type");
-            startInfo.ArgumentList.Add("image/png");
+            startInfo.ArgumentList.Add(type);
 
             using var process = Process.Start(startInfo);
 
@@ -126,7 +132,7 @@ public static class WaylandClipboard
 
             using (var input = process.StandardInput.BaseStream)
             {
-                input.Write(png);
+                input.Write(content);
             }
 
             // wl-copy forks its holder and the foreground exits immediately, so this returns as soon
@@ -139,7 +145,7 @@ public static class WaylandClipboard
         catch (Exception exception)
         {
             error = exception is System.ComponentModel.Win32Exception
-                ? "wl-copy is not installed. Install wl-clipboard to copy images."
+                ? "wl-copy is not installed. Install wl-clipboard to copy."
                 : exception.Message;
 
             return false;

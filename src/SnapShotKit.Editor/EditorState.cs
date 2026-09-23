@@ -44,6 +44,9 @@ public sealed class EditorState
     /// </summary>
     public PrintSettings Print { get; set; } = new();
 
+    /// <summary>What the strip of recent captures along the bottom of the window was told to do.</summary>
+    public StripSettings Strip { get; set; } = new();
+
     /// <summary>Reads what was remembered, or hands back the defaults when there is nothing to read.</summary>
     public static EditorState Load()
     {
@@ -76,6 +79,28 @@ public sealed class EditorState
     }
 
     /// <summary>
+    /// Changes what the strip remembers, and writes it out.
+    ///
+    /// Applied to what is on disk rather than to what this window read when it opened. Two editor
+    /// windows each holding their own copy would otherwise undo each other: a capture taken off
+    /// the strip in one would come back the moment the other pinned something. For an export
+    /// setting the last window winning is right; for a list, it loses the other window's work.
+    /// </summary>
+    public void ChangeStrip(Action<StripSettings> change)
+    {
+        var current = Load().Strip;
+        change(current);
+
+        // Captures deleted since, or deleted by another window, are dropped rather than carried
+        // forward, so the file does not grow by a line for every capture ever pinned.
+        current.PinnedCaptures.RemoveAll(path => !File.Exists(path));
+        current.RemovedCaptures.RemoveAll(path => !File.Exists(path));
+
+        Strip = current;
+        Save();
+    }
+
+    /// <summary>
     /// Writes the file, or does not.
     ///
     /// Through a temporary file moved into place, so an interrupted write cannot leave half a file
@@ -99,4 +124,29 @@ public sealed class EditorState
             // an interruption: the session carries on with what it has, and forgets it afterwards.
         }
     }
+}
+
+/// <summary>
+/// What the strip of recent captures has been told.
+///
+/// Captures are named by path, which is what the library knows them by. A capture saved under a
+/// new name is a new file, and starts out neither pinned nor removed, which is what a new file is.
+/// </summary>
+public sealed class StripSettings
+{
+    /// <summary>
+    /// Whether the strip stays up, taking its share of the window, or waits below the edge for the
+    /// pointer. Off to begin with: the picture is what the window is for, and the strip is one
+    /// movement of the mouse away.
+    /// </summary>
+    public bool Pinned { get; set; }
+
+    /// <summary>Captures kept at the front of the strip however many newer ones arrive, in the order they were pinned.</summary>
+    public List<string> PinnedCaptures { get; set; } = [];
+
+    /// <summary>
+    /// Captures taken off the strip without being deleted. Still in the library, and back on the
+    /// strip as soon as they are opened from it.
+    /// </summary>
+    public List<string> RemovedCaptures { get; set; } = [];
 }

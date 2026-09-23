@@ -28,6 +28,14 @@ public sealed class SnapshotItem(SnapshotEntry entry) : INotifyPropertyChanged
     public string Time => Entry.Modified.ToString("HH:mm:ss");
 
     /// <summary>
+    /// The time alone for a capture taken today, and the day with it otherwise.
+    ///
+    /// A pinned capture stays on the strip for as long as it is pinned, and "14:02:11" under one
+    /// taken last week reads as this afternoon.
+    /// </summary>
+    public string When => Entry.Modified.Date == DateTime.Today ? Time : Entry.Modified.ToString("d MMM HH:mm");
+
+    /// <summary>
     /// What is drawn on the capture, in words: "no objects", "blur, 2 arrows".
     ///
     /// Read from the document in the background, the same way the picture is. It answers the
