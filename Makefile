@@ -14,6 +14,10 @@ RUNTIME    ?= linux-x64
 # build from one (COPR, rpmbuild) has to say which version it is.
 VERSION    ?=
 
+# The Fedora package runs the daemon and the editor on Fedora's own .NET runtime. The .deb and the
+# AppImage cannot, because Debian ships no .NET at all, so they carry the runtime with them.
+SELF_CONTAINED ?= false
+
 UUID       := snapshotkit@dvdstelt.github.io
 STAGE      := build/stage
 LIBEXEC    := $(DESTDIR)$(PREFIX)/lib/snapshotkit
@@ -43,8 +47,8 @@ build: native
 	@mkdir -p $(STAGE)
 	$(PUBLISH) src/SnapShotKit.Cli     -o $(STAGE)
 	$(PUBLISH) src/SnapShotKit.Overlay -o $(STAGE) -p:StripSymbols=true
-	$(PUBLISH) src/SnapShotKit.Daemon  --self-contained false -o $(STAGE)
-	$(PUBLISH) src/SnapShotKit.Editor  --self-contained false -o $(STAGE)
+	$(PUBLISH) src/SnapShotKit.Daemon  --self-contained $(SELF_CONTAINED) -o $(STAGE)
+	$(PUBLISH) src/SnapShotKit.Editor  --self-contained $(SELF_CONTAINED) -o $(STAGE)
 	@cp src/native/snapshotkit-capture/snapshotkit-capture $(STAGE)/
 	@rm -f $(STAGE)/*.dbg
 	@echo "staged in $(STAGE)"
