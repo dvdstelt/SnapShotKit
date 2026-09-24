@@ -20,7 +20,7 @@ License:        LicenseRef-SnapShotKit
 URL:            https://github.com/dvdstelt/snapshotkit
 Source0:        %{url}/archive/v%{version}/%{forgename}-%{version}.tar.gz
 
-ExclusiveArch:  x86_64
+ExclusiveArch:  x86_64 aarch64
 
 BuildRequires:  dotnet-sdk-10.0
 BuildRequires:  gcc

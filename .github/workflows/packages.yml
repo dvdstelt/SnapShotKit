@@ -1,0 +1,176 @@
+# Builds every package and proves each one installs and runs. Called by ci.yml on every push and
+# pull request, and by release.yml for a release, so a release can never be the first thing to
+# build a package: whatever it attaches has been through exactly these steps.
+#
+# Three formats per architecture, from two builds:
+#   rpm      Fedora-native, from packaging/snapshotkit.spec in a Fedora container, on Fedora's own
+#            .NET. It is the package COPR builds, so download and dnf users get the same bits.
+#   deb      Self-contained, for Debian 13 and Ubuntu 25.04 onwards, since Debian ships no .NET.
+#   AppImage Self-contained, from the same staged tree as the .deb, for any other GNOME desktop.
+#
+# GNOME 48 is the floor, because that is the oldest shell the extension declares. Every
+# distribution that has it has a glibc newer than Ubuntu 24.04's, which is why the self-contained
+# build runs there: a self-contained build links the build machine's glibc, and 24.04 is old
+# enough to start everywhere that matters.
+
+name: Packages
+
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        description: 'JSON list of {"rid", "runner"} to build for.'
+        type: string
+        required: true
+      version:
+        description: "Version to build, without the v. Empty lets MinVer read it from the tags."
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    runs-on: ${{ matrix.runner }}
+    container: fedora:44
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    env:
+      SNAPSHOTKIT_VERSION: ${{ inputs.version }}
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+    steps:
+      # git before checkout, or actions/checkout falls back to downloading a tarball with no
+      # history, and MinVer then versions everything 0.0.0.
+      - name: Install the tools this workflow needs
+        run: dnf install -y --setopt=install_weak_deps=False dnf5-plugins rpm-build rpmdevtools git
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # MinVer needs the tags.
+
+      # The checkout belongs to another user than the container's root, which git refuses to read
+      # history from; and the package's build requirements come from the spec, so the two cannot
+      # drift apart the way they did before the first release.
+      - name: Install the package's build requirements
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          dnf builddep -y packaging/snapshotkit.spec
+
+      - name: Build the RPM
+        run: scripts/package/rpm.sh dist
+
+      # A package that installs but puts things somewhere unexpected is worse than one that fails,
+      # because it fails later and on someone else's machine.
+      - name: Check the package installs and the commands are where they should be
+        run: |
+          set -euo pipefail
+          dnf install -y dist/snapshotkit-*.rpm
+          test -x /usr/bin/snapshotkit
+          test -x /usr/bin/snapshotkit-editor
+          test -f /usr/lib/snapshotkit/snapshotkit-overlay
+          test -f /usr/lib/snapshotkit/snapshotkit-capture
+          test -f /usr/lib/systemd/user/snapshotkitd.service
+          test -f /usr/share/dbus-1/services/org.snapshotkit.Daemon.service
+          test -f /usr/share/applications/snapshotkit-editor.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/snapshotkit.png
+          test -f /usr/share/gnome-shell/extensions/snapshotkit@dvdstelt.github.io/extension.js
+          snapshotkit --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snapshotkit-rpm-${{ matrix.rid }}
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  self-contained:
+    # arm64 is built on an arm64 runner rather than cross-compiled: the capture helper is C against
+    # libpipewire and the client is compiled ahead of time, and both want a native toolchain.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    env:
+      SNAPSHOTKIT_VERSION: ${{ inputs.version }}
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # MinVer needs the tags.
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # PipeWire headers for the capture helper, clang and zlib for the ahead-of-time client and
+      # overlay, and the schema compiler for the shell extension.
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpipewire-0.3-dev pkg-config clang zlib1g-dev libglib2.0-bin
+
+      - name: Build the .deb and the AppImage
+        run: scripts/package/all.sh ${{ matrix.rid }} dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snapshotkit-${{ matrix.rid }}
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+          if-no-files-found: error
+
+  # On the oldest Debian the .deb is meant for, rather than on the Ubuntu that built it, so that a
+  # dependency spelled only the way Ubuntu spells it fails here. The editor renders an export from
+  # each format, which is the cheapest proof that the bundled runtime and Skia actually start; the
+  # picture it renders is the package's own icon, so nothing needs checking out.
+  install-check:
+    needs: self-contained
+    runs-on: ${{ matrix.runner }}
+    container: debian:trixie
+    env:
+      ICON: /usr/share/icons/hicolor/256x256/apps/snapshotkit.png
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: snapshotkit-${{ matrix.rid }}
+          path: dist
+
+      - name: Install the .deb
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/*.deb xvfb xauth
+          test -x /usr/bin/snapshotkit
+          test -x /usr/bin/snapshotkit-editor
+          test -f /usr/lib/snapshotkit/snapshotkit-capture
+          test -f /usr/share/gnome-shell/extensions/snapshotkit@dvdstelt.github.io/schemas/gschemas.compiled
+          # Linked against the system's PipeWire, never a bundled one.
+          ldd /usr/lib/snapshotkit/snapshotkit-capture | grep -q '/libpipewire-0.3.so.0'
+          snapshotkit --help
+
+      - name: Render an export from the .deb
+        run: |
+          XDG_DATA_HOME="$RUNNER_TEMP/deb" xvfb-run -a \
+            snapshotkit-editor "$ICON" --export "$RUNNER_TEMP/deb.png"
+          test -s "$RUNNER_TEMP/deb.png"
+
+      # Extracted rather than mounted, because a container has no FUSE. The dispatch through AppRun
+      # is what is being checked, and that is the same either way.
+      - name: Run the AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          image="$(ls dist/*.AppImage)"
+          chmod +x "$image"
+          "$image" help
+          XDG_DATA_HOME="$RUNNER_TEMP/appimage" xvfb-run -a \
+            "$image" editor "$ICON" --export "$RUNNER_TEMP/appimage.png"
+          test -s "$RUNNER_TEMP/appimage.png"

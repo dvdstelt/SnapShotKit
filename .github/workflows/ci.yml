@@ -1,0 +1,32 @@
+# Builds every package on every push and pull request, so that a release is never the first thing
+# to discover that a packaging script cannot run from a clean checkout. x86-64 only: arm64 differs
+# in the runner rather than in the scripts, and release.yml builds it.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check every packaging script parses
+        run: for f in scripts/package/*.sh src/native/snapshotkit-capture/build.sh; do bash -n "$f"; done
+
+  packages:
+    uses: ./.github/workflows/packages.yml
+    with:
+      matrix: '[{"rid": "linux-x64", "runner": "ubuntu-24.04"}]'
