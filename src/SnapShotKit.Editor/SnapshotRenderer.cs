@@ -40,8 +40,14 @@ public static class SnapshotRenderer
     /// An annotation to leave undrawn. Used while text is being typed in place, where the editor
     /// itself is showing the words: drawing them underneath as well would double every stroke.
     /// </param>
+    /// <param name="cropping">
+    /// A picture being cropped, drawn whole as if it had no crop, with what falls outside
+    /// <c>Keep</c> dimmed. Dimmed here rather than over the finished drawing, so that only the
+    /// picture's own pixels are: whatever stands on it, or another picture over it, is not going
+    /// anywhere, and dimming it too would say that it was.
+    /// </param>
     public static void Draw(DrawingContext context, Snapshot snapshot, BlurCache blurs, Rect target, Rect area,
-        Annotation? suppress = null)
+        Annotation? suppress = null, (ImageAnnotation Picture, Rect Keep)? cropping = null)
     {
         var scale = area.Width == 0 ? 1 : target.Width / area.Width;
 
@@ -72,14 +78,14 @@ public static class SnapshotRenderer
 
             using (context.PushClip(within))
             {
-                DrawPiece(context, snapshot, blurs, origin - shift * scale, scale, suppress);
+                DrawPiece(context, snapshot, blurs, origin - shift * scale, scale, suppress, cropping);
             }
         }
     }
 
     /// <summary>The pictures and everything on them, positioned in capture pixels from a given corner.</summary>
     static void DrawPiece(DrawingContext context, Snapshot snapshot, BlurCache blurs, Point origin, double scale,
-        Annotation? suppress)
+        Annotation? suppress, (ImageAnnotation Picture, Rect Keep)? cropping)
     {
         var layers = snapshot.Document.Layers;
         var dimmed = false;
@@ -100,6 +106,11 @@ public static class SnapshotRenderer
 
             switch (annotation)
             {
+                case ImageAnnotation image when cropping is { } crop && ReferenceEquals(image, crop.Picture)
+                                                && snapshot.BitmapOf(image.Source) is { } bitmap:
+                    DrawCropping(context, bitmap, image, crop.Keep, origin, scale);
+                    break;
+
                 case ImageAnnotation image when snapshot.BitmapOf(image.Source) is { } bitmap:
                     DrawPicture(context, bitmap, image, origin, scale);
                     break;
@@ -128,6 +139,36 @@ public static class SnapshotRenderer
                     break;
             }
         }
+    }
+
+    /// <summary>What the part of a picture being cropped off is covered with, the same as the surround of a canvas being resized.</summary>
+    static readonly IBrush CropScrim = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(0x9E, 0x2B, 0x2B, 0x2D));
+
+    /// <summary>
+    /// A picture being cropped: all of it, standing where all of it would, with nothing cropped
+    /// off, and everything outside the part being kept dimmed.
+    /// </summary>
+    static void DrawCropping(DrawingContext context, Bitmap bitmap, ImageAnnotation image, Rect keep, Point origin, double scale)
+    {
+        var whole = PictureCrop.Whole(image, bitmap.PixelSize);
+        var uncropped = (ImageAnnotation)image.Copy();
+
+        uncropped.X = whole.X;
+        uncropped.Y = whole.Y;
+        uncropped.Width = whole.Width;
+        uncropped.Height = whole.Height;
+        uncropped.Crop = null;
+
+        DrawPicture(context, bitmap, uncropped, origin, scale);
+
+        Rect Placed(Rect rect) => new(origin.X + rect.X * scale, origin.Y + rect.Y * scale, rect.Width * scale, rect.Height * scale);
+
+        var dimmed = new CombinedGeometry(
+            GeometryCombineMode.Exclude,
+            new RectangleGeometry(Placed(whole)),
+            new RectangleGeometry(Placed(keep.Intersect(whole))));
+
+        context.DrawGeometry(CropScrim, null, dimmed);
     }
 
     /// <summary>

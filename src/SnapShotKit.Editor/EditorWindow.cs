@@ -157,7 +157,7 @@ public sealed class EditorWindow : Window
 
         scroller = new ScrollViewer { Content = canvasHost };
 
-        // The bar that applies or abandons a canvas resize. It lives on the mat rather than in the
+        // The bar that applies or abandons a canvas resize or a crop. It lives on the mat rather than in the
         // canvas, because the mat is the part of the window where nothing happens: a question about
         // the picture must not be asked on top of the picture.
         confirmBar = new Border
@@ -177,8 +177,8 @@ public sealed class EditorWindow : Window
                 {
                     // Quiet answer first and the decisive one last, which is the order every other
                     // question in this application is asked in.
-                    Buttons.Secondary("Cancel", null, () => canvas?.CancelCanvasResize()),
-                    Buttons.Primary("Apply", null, () => canvas?.ApplyCanvasResize())
+                    Buttons.Secondary("Cancel", null, () => canvas?.CancelFrame()),
+                    Buttons.Primary("Apply", null, () => canvas?.ApplyFrame())
                 }
             }
         };
@@ -453,7 +453,7 @@ public sealed class EditorWindow : Window
             return;
         }
 
-        confirmBar.IsVisible = canvas.IsResizingCanvas;
+        confirmBar.IsVisible = canvas.IsFraming;
 
         if (!confirmBar.IsVisible || canvas.TranslatePoint(default, floating) is not { } corner)
         {
@@ -526,6 +526,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Delete", "Del", () => canvas?.DeleteSelected()),
             MenuEntry.Item("Deselect", "Esc", () => canvas?.Select(null)),
             MenuEntry.Separator,
+            MenuEntry.Item("Crop picture", "R", () => SetTool(EditorTool.Crop)),
             MenuEntry.Item("Resize canvas", "C", () => SetTool(EditorTool.Canvas)),
             MenuEntry.Item("Fit canvas to pictures", null, FitCanvasToPictures),
             MenuEntry.Separator,
@@ -830,7 +831,7 @@ public sealed class EditorWindow : Window
 
             if (canvas.IsResizingCanvas)
             {
-                canvas.CancelCanvasResize();
+                canvas.CancelFrame();
             }
             else
             {
@@ -839,6 +840,8 @@ public sealed class EditorWindow : Window
         };
 
         band.PictureFlipRequested += horizontally => canvas?.Flip(horizontally);
+        band.PictureCropRequested += () => SetTool(EditorTool.Crop);
+        band.WholePictureRequested += () => canvas?.ProposeWholePicture();
         band.PictureSizeRestoreRequested += () => canvas?.RestorePictureSize();
 
         band.ZoomStepped += direction => StepZoom(direction);
@@ -1093,10 +1096,18 @@ public sealed class EditorWindow : Window
             return;
         }
 
+        // With nothing selected and no capture, there is no telling which picture was meant, and
+        // a crop tool that opened on none would be a mode with nothing in it.
+        if (selected == EditorTool.Crop && canvas.CropTarget() is null)
+        {
+            Report("Select the picture to crop first");
+            return;
+        }
+
         tool = selected;
 
-        // Picking the canvas tool opens a resize, and leaving it abandons one that was never
-        // applied. The view owns that, because it owns what is being negotiated.
+        // Picking the canvas or crop tool opens a resize, and leaving it abandons one that was
+        // never applied. The view owns that, because it owns what is being negotiated.
         canvas.Tool = selected;
 
         canvas.Focus();
@@ -1986,14 +1997,20 @@ public sealed class EditorWindow : Window
         menu.Show(Path.GetFileName(snapshot.Path), dirty);
 
         // The canvas being proposed while one is being resized, and the document's own otherwise:
-        // the readouts follow what is on screen, which is what the user is working on.
+        // the readouts follow what is on screen, which is what the user is working on. The size
+        // fields follow a crop too, since they are how a crop is given an exact size; the readout
+        // at the foot stays on the canvas, which a crop has not changed yet.
         var size = canvas.ShownCanvas;
-        band.ShowCanvasSize((int)canvas.ShownCanvasLaid.Width, (int)canvas.ShownCanvasLaid.Height);
+        band.ShowCanvasSize((int)canvas.ProposalLaid.Width, (int)canvas.ProposalLaid.Height);
         band.ShowCanvas((int)canvas.ShownCanvasLaid.Width, (int)canvas.ShownCanvasLaid.Height,
             snapshot.Document.ManualCanvas is not null, canvas.IsResizingCanvas);
 
         var selection = canvas.Selected switch
         {
+            // Nothing is selected while a picture is being cropped, and which one it is is the
+            // thing worth saying.
+            _ when canvas.IsCroppingCapture => "cropping the capture",
+            _ when canvas.IsCropping => "cropping a picture",
             ArrowAnnotation => "arrow selected",
             BoxAnnotation => "box selected",
             BlurAnnotation => "blur selected",
@@ -2251,17 +2268,17 @@ public sealed class EditorWindow : Window
             return;
         }
 
-        // A resize is a question with two answers, and these are the two keys that answer it
-        // anywhere else in the system.
-        if (canvas.IsResizingCanvas && e.Key is Key.Enter or Key.Escape)
+        // A resize or a crop is a question with two answers, and these are the two keys that answer
+        // it anywhere else in the system.
+        if (canvas.IsFraming && e.Key is Key.Enter or Key.Escape)
         {
             if (e.Key == Key.Enter)
             {
-                canvas.ApplyCanvasResize();
+                canvas.ApplyFrame();
             }
             else
             {
-                canvas.CancelCanvasResize();
+                canvas.CancelFrame();
             }
 
             e.Handled = true;
@@ -2346,6 +2363,10 @@ public sealed class EditorWindow : Window
 
             case Key.C:
                 SetTool(EditorTool.Canvas);
+                break;
+
+            case Key.R:
+                SetTool(EditorTool.Crop);
                 break;
 
             case Key.X:

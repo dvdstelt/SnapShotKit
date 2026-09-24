@@ -29,7 +29,10 @@ public enum EditorTool
     Canvas,
 
     /// <summary>Takes a band out of the picture and closes the gap.</summary>
-    Cut
+    Cut,
+
+    /// <summary>Crops one picture: the selected one, or the capture when nothing is.</summary>
+    Crop
 }
 
 enum DragKind
@@ -313,7 +316,7 @@ public sealed class CanvasView : Decorator
     /// </summary>
     bool undoPending;
 
-    /// <summary>The resize being negotiated, or null when the canvas tool is not in hand.</summary>
+    /// <summary>The resize or crop being negotiated, or null when neither tool is in hand.</summary>
     CanvasResize? resizing;
 
     /// <summary>The band being dragged out, in capture pixels, or null when nothing is being cut.</summary>
@@ -390,10 +393,11 @@ public sealed class CanvasView : Decorator
     /// The active tool.
     ///
     /// The canvas tool is a mode rather than a way of drawing: picking it opens a resize, and
-    /// leaving it abandons one that was never applied.
+    /// leaving it abandons one that was never applied. The crop tool is the same mode pointed at a
+    /// picture instead of the canvas.
     ///
-    /// Neither it nor the cut tool works on anything standing on the picture, so both drop the
-    /// selection as they are picked up.
+    /// None of them works on anything standing on the picture, so all three drop the selection as
+    /// they are picked up. The crop tool looks at it first, since it is what says which picture.
     /// </summary>
     public EditorTool Tool
     {
@@ -408,7 +412,7 @@ public sealed class CanvasView : Decorator
             var previous = field;
             field = value;
 
-            if (previous == EditorTool.Canvas)
+            if (previous is EditorTool.Canvas or EditorTool.Crop)
             {
                 // Nothing has been applied to the document yet, and a crop left half negotiated
                 // must not be applied behind the user's back.
@@ -418,6 +422,11 @@ public sealed class CanvasView : Decorator
             if (value == EditorTool.Canvas)
             {
                 OpenResize();
+            }
+
+            if (value == EditorTool.Crop)
+            {
+                OpenCrop();
             }
 
             if (value == EditorTool.Cut)
@@ -774,7 +783,7 @@ public sealed class CanvasView : Decorator
         // The canvas tool works on the canvas and on nothing else. Its grips sit on the boundary,
         // where an annotation's own would be indistinguishable from them, and the objects on the
         // picture are not what is being resized.
-        if (Tool == EditorTool.Canvas)
+        if (Tool is EditorTool.Canvas or EditorTool.Crop)
         {
             BeginCanvasResize(view, image, e);
             return;
@@ -1329,6 +1338,13 @@ public sealed class CanvasView : Decorator
     /// </summary>
     public void FitCanvasToPictures()
     {
+        if (resizing is { Picture: not null })
+        {
+            // The canvas is not what is being worked on, and fitting it now would be decided
+            // around a crop that has not happened yet.
+            return;
+        }
+
         if (resizing is not null)
         {
             Propose(PicturesRect(), fits: true);
@@ -1521,11 +1537,25 @@ public sealed class CanvasView : Decorator
     // gone, and an edge dragged outward has to have somewhere visible to go. Nothing reaches the
     // document until the resize is applied, so the whole negotiation is one undo step or none.
 
-    /// <summary>A resize being negotiated.</summary>
+    /// <summary>A resize being negotiated, of the canvas or of what one picture shows.</summary>
     sealed class CanvasResize
     {
-        /// <summary>The canvas as proposed, in image pixels.</summary>
+        /// <summary>The canvas as proposed, in image pixels, or the part of the picture to keep when cropping.</summary>
         public Rect Proposed;
+
+        /// <summary>
+        /// The picture being cropped, by its id, or null when it is the canvas being resized.
+        ///
+        /// By id rather than held, because undo replaces every layer with a copy of itself, and a
+        /// crop held on to the one it started with would go on cropping a picture no longer there.
+        /// </summary>
+        public string? Picture;
+
+        /// <summary>Whether the picture was selected when the crop began, so it can be given back selected.</summary>
+        public bool WasSelected;
+
+        /// <summary>The whole of the picture being cropped, in image pixels: as far as any edge of the crop can go.</summary>
+        public Rect Whole;
 
         /// <summary>The working surface on show: the proposal and the capture, with room around both.</summary>
         public Rect Frame;
@@ -1548,10 +1578,67 @@ public sealed class CanvasView : Decorator
     /// <summary>How far along the boundary from a corner still counts as the corner rather than the side.</summary>
     const double CornerReach = 24;
 
-    public bool IsResizingCanvas => resizing is not null;
+    /// <summary>Whether a resize or a crop is being negotiated, which is when Enter and Escape answer it.</summary>
+    public bool IsFraming => resizing is not null;
+
+    public bool IsResizingCanvas => resizing is { Picture: null };
+
+    public bool IsCropping => resizing is { Picture: not null };
+
+    /// <summary>Whether what is being cropped is the capture, for saying so.</summary>
+    public bool IsCroppingCapture => resizing is { Picture: { } id } && PictureById(id) is { IsCapture: true };
 
     /// <summary>The canvas as it is being shown: the proposal while one is on the table, the document's own otherwise.</summary>
-    public Rect ShownCanvas => resizing?.Proposed ?? CanvasRect();
+    public Rect ShownCanvas => resizing is { Picture: null } session ? session.Proposed : CanvasRect();
+
+    /// <summary>What is being proposed, as the file would come out: the canvas, or the part of the picture being kept.</summary>
+    public Rect ProposalLaid => snapshot.Layout.ToLaid(resizing?.Proposed ?? CanvasRect());
+
+    ImageAnnotation? PictureById(string id) => snapshot.Document.Layers
+        .OfType<ImageAnnotation>()
+        .FirstOrDefault(picture => picture.Id == id);
+
+    /// <summary>The picture being cropped, as the document has it now.</summary>
+    ImageAnnotation? Cropped() => resizing is { } session ? Cropped(session) : null;
+
+    /// <summary>
+    /// The picture the crop tool would work on: the selected picture, or the capture when nothing
+    /// is selected, or the only picture there is when there is no capture. Null when none of those
+    /// can be said, which is when there is nothing sensible to crop without being told which.
+    /// </summary>
+    public ImageAnnotation? CropTarget()
+    {
+        var pictures = snapshot.Document.Layers
+            .OfType<ImageAnnotation>()
+            .Where(picture => snapshot.BitmapOf(picture.Source) is not null)
+            .ToList();
+
+        return Selected is ImageAnnotation selected && pictures.Contains(selected) ? selected
+            : pictures.FirstOrDefault(picture => picture.IsCapture)
+            ?? (pictures.Count == 1 ? pictures[0] : null);
+    }
+
+    /// <summary>
+    /// Opens a crop of whichever picture <see cref="CropTarget"/> names. Nothing opens when it names
+    /// none; the window asks first and says why.
+    /// </summary>
+    void OpenCrop()
+    {
+        CommitEdit();
+
+        if (CropTarget() is not { } picture)
+        {
+            return;
+        }
+
+        var wasSelected = ReferenceEquals(Selected, picture);
+
+        // Nothing on the picture is worked on in this mode, the same as when the canvas is resized.
+        Select(null);
+
+        resizing = new CanvasResize { Picture = picture.Id, WasSelected = wasSelected };
+        SeedResize();
+    }
 
     void OpenResize()
     {
@@ -1581,8 +1668,29 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        session.Proposed = CanvasRect();
-        session.Frame = FrameAround(session.Proposed, PicturesRect());
+        if (session.Picture is not null)
+        {
+            // The picture may be gone altogether, undone out of existence. There is nothing left
+            // to crop, and a mode with nothing to work on is just a way for Enter to do nothing.
+            if (Cropped() is not { } picture || snapshot.BitmapOf(picture.Source) is not { } bitmap)
+            {
+                CancelFrame();
+                return;
+            }
+
+            session.Proposed = BoundsOf(picture);
+            session.Whole = PictureCrop.Whole(picture, bitmap.PixelSize);
+
+            // Everything the pictures cover and all of this one, so the part the crop has taken off
+            // is on show to be brought back. Fixed for as long as the crop lasts: the crop can only
+            // move inside the picture, and the picture is already all in view.
+            session.Frame = CanvasRect().Union(PicturesRect()).Union(session.Whole);
+        }
+        else
+        {
+            session.Proposed = CanvasRect();
+            session.Frame = FrameAround(session.Proposed, PicturesRect());
+        }
 
         // Left for the next measure to work out, since it depends on the room available.
         sessionScale = 0;
@@ -1603,7 +1711,7 @@ public sealed class CanvasView : Decorator
     /// </summary>
     static Rect FrameAround(Rect proposed, Rect capture) => proposed.Union(capture);
 
-    /// <summary>Leaves the mode. Whatever was proposed is dropped; only <see cref="ApplyCanvasResize"/> writes to the document.</summary>
+    /// <summary>Leaves the mode. Whatever was proposed is dropped; only <see cref="ApplyFrame"/> writes to the document.</summary>
     void CloseResize()
     {
         if (resizing is null)
@@ -1620,10 +1728,16 @@ public sealed class CanvasView : Decorator
     }
 
     /// <summary>Applies the proposal to the document as one undoable step, and leaves the mode.</summary>
-    public void ApplyCanvasResize()
+    public void ApplyFrame()
     {
         if (resizing is not { } session)
         {
+            return;
+        }
+
+        if (session.Picture is not null)
+        {
+            ApplyCrop(session);
             return;
         }
 
@@ -1665,19 +1779,81 @@ public sealed class CanvasView : Decorator
         CanvasResizeFinished?.Invoke();
     }
 
-    /// <summary>Abandons the proposal and leaves the mode. The document was never touched.</summary>
-    public void CancelCanvasResize()
+    /// <summary>
+    /// Crops the picture to the proposal as one undoable step, and leaves the mode.
+    ///
+    /// The part kept stays exactly where it was on the canvas, and nothing drawn on it moves. The
+    /// cuts do not follow either, unlike when the picture is moved or stretched: nothing of the
+    /// picture has gone anywhere, it has only stopped being shown past the new edges. The canvas
+    /// then fits the pictures as it does after any change to one, so cropping the capture on its
+    /// own crops what gets exported, exactly as pulling the canvas in would have.
+    /// </summary>
+    void ApplyCrop(CanvasResize session)
     {
-        if (resizing is null)
+        var picture = Cropped();
+        var changed = picture is not null
+            && snapshot.BitmapOf(picture.Source) is not null
+            && BoundsOf(picture) != session.Proposed;
+
+        if (changed)
+        {
+            BeforeChange?.Invoke();
+            PictureCrop.Show(picture!, snapshot.BitmapOf(picture!.Source)!.PixelSize, session.Proposed);
+        }
+
+        CloseResize();
+
+        if (changed)
+        {
+            Refit();
+        }
+
+        // Handed back selected if it was picked out to be cropped, so whatever came next for it
+        // can carry on without picking it out again.
+        if (session.WasSelected && picture is not null)
+        {
+            Select(picture);
+        }
+
+        if (changed)
+        {
+            Changed?.Invoke();
+        }
+
+        InvalidateMeasure();
+        InvalidateVisual();
+        CanvasResizeFinished?.Invoke();
+    }
+
+    /// <summary>Abandons the proposal and leaves the mode. The document was never touched.</summary>
+    public void CancelFrame()
+    {
+        if (resizing is not { } session)
         {
             return;
         }
 
         CloseResize();
 
+        if (session.WasSelected && Cropped(session) is { } picture)
+        {
+            Select(picture);
+        }
+
         InvalidateMeasure();
         InvalidateVisual();
         CanvasResizeFinished?.Invoke();
+    }
+
+    ImageAnnotation? Cropped(CanvasResize session) => session.Picture is { } id ? PictureById(id) : null;
+
+    /// <summary>Proposes showing all of the picture being cropped, which is how a crop is taken off again.</summary>
+    public void ProposeWholePicture()
+    {
+        if (resizing is { Picture: not null } session)
+        {
+            Propose(session.Whole);
+        }
     }
 
     /// <summary>
@@ -1700,11 +1876,14 @@ public sealed class CanvasView : Decorator
             Math.Max(width ?? laid.Width, MinimumCanvas),
             Math.Max(height ?? laid.Height, MinimumCanvas));
 
-        Propose(new Rect(
+        var proposed = new Rect(
             session.Proposed.X,
             session.Proposed.Y,
             snapshot.Layout.Widen(session.Proposed.X, wanted.Width, CutAxis.Columns),
-            snapshot.Layout.Widen(session.Proposed.Y, wanted.Height, CutAxis.Rows)));
+            snapshot.Layout.Widen(session.Proposed.Y, wanted.Height, CutAxis.Rows));
+
+        // A crop cannot show more of the picture than there is.
+        Propose(session.Picture is null ? proposed : proposed.Intersect(session.Whole));
     }
 
     /// <summary>The canvas being shown, as the file would come out: the cuts closed up.</summary>
@@ -1719,6 +1898,14 @@ public sealed class CanvasView : Decorator
 
         session.Proposed = proposed;
         session.Fits = fits;
+
+        if (session.Picture is not null)
+        {
+            // The surface already shows all of the picture, which is as far as a crop can reach.
+            CanvasProposalChanged?.Invoke();
+            InvalidateVisual();
+            return;
+        }
 
         // The surface follows the canvas exactly, in both directions. Anything else leaves grey
         // where the canvas has been but no longer is, which says "something was cropped here" about
@@ -1776,19 +1963,41 @@ public sealed class CanvasView : Decorator
         var x = Math.Round(to.X);
         var y = Math.Round(to.Y);
 
+        // A crop is held inside the picture, since past its edge there is nothing to show, and it
+        // may be as small as the picture is if the picture is smaller than a canvas may be.
+        var cropping = session.Picture is not null;
+        var whole = session.Whole;
+
+        var leastWide = cropping ? Math.Min(MinimumCanvas, whole.Width) : MinimumCanvas;
+        var leastHigh = cropping ? Math.Min(MinimumCanvas, whole.Height) : MinimumCanvas;
+
         if (canvasGrip == DragKind.Move)
         {
+            // Slid along the picture rather than stopped dead, so a crop pushed against one edge
+            // still follows the pointer along it.
+            if (cropping)
+            {
+                x = Math.Clamp(x, whole.X, Math.Max(whole.Right - canvasBaseline.Width, whole.X));
+                y = Math.Clamp(y, whole.Y, Math.Max(whole.Bottom - canvasBaseline.Height, whole.Y));
+            }
+
             Propose(new Rect(x, y, canvasBaseline.Width, canvasBaseline.Height));
         }
         else
         {
+            if (cropping)
+            {
+                x = Math.Clamp(x, whole.X, whole.Right);
+                y = Math.Clamp(y, whole.Y, whole.Bottom);
+            }
+
             // Stopped at the minimum rather than turned inside out. A rectangle drawn backwards is
             // still a rectangle; a canvas dragged past its far edge would swing the picture across
             // the screen.
-            var left = MovesLeft(canvasGrip) ? Math.Min(x, canvasBaseline.Right - MinimumCanvas) : canvasBaseline.X;
-            var top = MovesTop(canvasGrip) ? Math.Min(y, canvasBaseline.Bottom - MinimumCanvas) : canvasBaseline.Y;
-            var right = MovesRight(canvasGrip) ? Math.Max(x, canvasBaseline.X + MinimumCanvas) : canvasBaseline.Right;
-            var bottom = MovesBottom(canvasGrip) ? Math.Max(y, canvasBaseline.Y + MinimumCanvas) : canvasBaseline.Bottom;
+            var left = MovesLeft(canvasGrip) ? Math.Min(x, canvasBaseline.Right - leastWide) : canvasBaseline.X;
+            var top = MovesTop(canvasGrip) ? Math.Min(y, canvasBaseline.Bottom - leastHigh) : canvasBaseline.Y;
+            var right = MovesRight(canvasGrip) ? Math.Max(x, canvasBaseline.X + leastWide) : canvasBaseline.Right;
+            var bottom = MovesBottom(canvasGrip) ? Math.Max(y, canvasBaseline.Y + leastHigh) : canvasBaseline.Bottom;
 
             Propose(new Rect(left, top, right - left, bottom - top));
         }
@@ -2157,10 +2366,21 @@ public sealed class CanvasView : Decorator
 
         // Outside the canvas is dimmed rather than hidden. Seeing what is about to be cropped away
         // is the whole reason this mode shows more than the canvas.
-        context.FillRectangle(Scrim, new Rect(target.X, target.Y, target.Width, Math.Max(rect.Y - target.Y, 0)));
-        context.FillRectangle(Scrim, new Rect(target.X, rect.Bottom, target.Width, Math.Max(target.Bottom - rect.Bottom, 0)));
-        context.FillRectangle(Scrim, new Rect(target.X, rect.Y, Math.Max(rect.X - target.X, 0), Math.Max(rect.Height, 0)));
-        context.FillRectangle(Scrim, new Rect(rect.Right, rect.Y, Math.Max(target.Right - rect.Right, 0), Math.Max(rect.Height, 0)));
+        //
+        // A crop takes away only what it takes off its own picture, so the renderer dims only that,
+        // under whatever stands on it; everything else stays exactly as it will be. The grips are
+        // then kept inside the picture, which is as far as they can go.
+        if (session.Picture is not null)
+        {
+            target = ViewRect(session.Whole);
+        }
+        else
+        {
+            context.FillRectangle(Scrim, new Rect(target.X, target.Y, target.Width, Math.Max(rect.Y - target.Y, 0)));
+            context.FillRectangle(Scrim, new Rect(target.X, rect.Bottom, target.Width, Math.Max(target.Bottom - rect.Bottom, 0)));
+            context.FillRectangle(Scrim, new Rect(target.X, rect.Y, Math.Max(rect.X - target.X, 0), Math.Max(rect.Height, 0)));
+            context.FillRectangle(Scrim, new Rect(rect.Right, rect.Y, Math.Max(target.Right - rect.Right, 0), Math.Max(rect.Height, 0)));
+        }
 
         for (var third = 1; third <= 2; third++)
         {
@@ -2462,7 +2682,8 @@ public sealed class CanvasView : Decorator
         // rather than drawn.
         context.FillRectangle(Chequerboard, ViewRect(shown));
 
-        SnapshotRenderer.Draw(context, snapshot, blurs, target, Area(), editing);
+        SnapshotRenderer.Draw(context, snapshot, blurs, target, Area(), editing,
+            resizing is { } framing && Cropped() is { } cropped ? (cropped, framing.Proposed) : null);
 
         if (resizing is { } session)
         {
