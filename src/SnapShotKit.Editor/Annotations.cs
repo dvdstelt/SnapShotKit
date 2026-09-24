@@ -526,13 +526,23 @@ public sealed class ImageAnnotation : RectAnnotation
     /// <summary>Mirrored top to bottom.</summary>
     public bool FlipVertical { get; set; }
 
+    /// <summary>
+    /// The part of the picture on show, in the picture's own pixels, or null for all of it.
+    ///
+    /// X, Y, Width and Height say where that part stands on the canvas, so a cropped picture is
+    /// moved, stretched and flipped exactly like one that is not. See <see cref="PictureCrop"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CropArea? Crop { get; set; }
+
     [JsonIgnore]
     public bool IsCapture => Source == Capture;
 
     public override Annotation Copy() => new ImageAnnotation
     {
         Id = Id, X = X, Y = Y, Width = Width, Height = Height,
-        Source = Source, FlipHorizontal = FlipHorizontal, FlipVertical = FlipVertical
+        Source = Source, FlipHorizontal = FlipHorizontal, FlipVertical = FlipVertical,
+        Crop = Crop?.Copy()
     };
 
     /// <summary>A picture has no look to take on. Where it is and which way it faces are not style.</summary>
@@ -541,6 +551,23 @@ public sealed class ImageAnnotation : RectAnnotation
     }
 
     public override bool WearsStyle(Annotation style) => false;
+}
+
+/// <summary>
+/// The part of a picture kept by a crop, in that picture's own pixels, before any flip.
+///
+/// Measured against the picture rather than the canvas so that it survives the picture being
+/// moved or stretched, and before the flip so that flipping a cropped picture turns the same part
+/// of it round rather than showing a different part.
+/// </summary>
+public sealed class CropArea
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+
+    public CropArea Copy() => new() { X = X, Y = Y, Width = Width, Height = Height };
 }
 
 /// <summary>
@@ -656,8 +683,11 @@ public sealed class SnapshotDocument
     /// Version 5 also records whether the canvas was sized by hand, since a canvas left alone now
     /// follows the pictures. An older canvas that is not exactly the capture was cropped or padded
     /// by somebody, and is migrated as set by hand so it stays exactly as they left it.
+    ///
+    /// Version 6 let a picture be cropped. An older picture has no crop, which shows all of it, and
+    /// that is what it meant, so there is nothing to fix up.
     /// </summary>
-    public const int Current = 5;
+    public const int Current = 6;
 
     public int Version { get; set; } = Current;
 

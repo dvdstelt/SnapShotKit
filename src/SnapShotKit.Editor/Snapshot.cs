@@ -316,6 +316,8 @@ public sealed class Snapshot : IDisposable
     /// origin, at its own size. A canvas that was not exactly the capture had been sized by hand,
     /// and is recorded as such.
     ///
+    /// Version 6 let a picture be cropped, and an older picture has no crop, which is all of it.
+    ///
     /// A document from further ahead than this build is left exactly as it is, version and all.
     /// There is nothing here that could repair one, and stamping it back down to this version would
     /// be this build telling a later one that migrations it has never heard of have already run.

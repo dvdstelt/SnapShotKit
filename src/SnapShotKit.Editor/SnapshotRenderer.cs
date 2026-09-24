@@ -145,9 +145,14 @@ public static class SnapshotRenderer
             Math.Max(image.Width * scale, 1),
             Math.Max(image.Height * scale, 1));
 
+        // Only the part the crop keeps, stretched over the part of the canvas the layer covers.
+        // A blurred copy is the same size as the picture it was made from, so the same part of it
+        // is the part under the blur.
+        var source = PictureCrop.Source(image, bitmap.PixelSize);
+
         if (!image.FlipHorizontal && !image.FlipVertical)
         {
-            context.DrawImage(bitmap, destination);
+            context.DrawImage(bitmap, source, destination);
             return;
         }
 
@@ -159,7 +164,7 @@ public static class SnapshotRenderer
 
         using (context.PushTransform(mirror))
         {
-            context.DrawImage(bitmap, destination);
+            context.DrawImage(bitmap, source, destination);
         }
     }
 

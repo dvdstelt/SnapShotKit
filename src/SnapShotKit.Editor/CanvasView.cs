@@ -1436,7 +1436,8 @@ public sealed class CanvasView : Decorator
     /// Puts the selected picture back to its own size, one image pixel to a picture pixel.
     ///
     /// From its top-left corner, which is the one that stays put, and the canvas follows it the same
-    /// as when it is stretched by hand.
+    /// as when it is stretched by hand. A cropped picture comes back to the size of what it shows,
+    /// not to the size of all of it: the crop is kept, and only the stretch is taken out.
     /// </summary>
     public void RestorePictureSize()
     {
@@ -1445,7 +1446,11 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        if (picture.Width == bitmap.PixelSize.Width && picture.Height == bitmap.PixelSize.Height)
+        var own = PictureCrop.Source(picture, bitmap.PixelSize);
+        var width = Math.Max(Math.Round(own.Width), 1);
+        var height = Math.Max(Math.Round(own.Height), 1);
+
+        if (picture.Width == width && picture.Height == height)
         {
             return;
         }
@@ -1455,8 +1460,8 @@ public sealed class CanvasView : Decorator
         var then = BoundsOf(picture);
         var cuts = CutFollow.Remember(snapshot.Document);
 
-        picture.Width = bitmap.PixelSize.Width;
-        picture.Height = bitmap.PixelSize.Height;
+        picture.Width = width;
+        picture.Height = height;
         FollowWithCuts(then, BoundsOf(picture), cuts);
         Refit();
 
