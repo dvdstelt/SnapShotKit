@@ -112,6 +112,19 @@ The same theme also claims keys. A text box with `AcceptsReturn` marks Enter han
 
 An imported image lands there too, and never beside the file it came from. Opening somebody's picture is permission to read it, not to write a sidecar into the folder it lives in.
 
+## Releasing and packaging
+
+[RELEASING.md](RELEASING.md) is the procedure and [docs/packaging.md](docs/packaging.md) the reasoning. The rules that are easy to break:
+
+- **The version comes from the nearest git tag, through MinVer.** Never hand-edit one, except the spec's `Version:`, which only COPR reads. Every CI checkout needs `fetch-depth: 0`, or MinVer sees no tags and versions everything `0.0.0`. A source tarball has no history, so a build from one has to be given `VERSION`.
+- **The Makefile's `install` target is the only layout.** The RPM installs through it and `scripts/package/stage.sh` stages the `.deb` and AppImage through it. A new installed file goes there and nowhere else.
+- **The RPM is Fedora-native; the `.deb` and AppImage are self-contained.** The RPM is built from the spec in a Fedora container on Fedora's .NET, because it has to be the package COPR builds. Do not pack it from the staged tree.
+- **GNOME 48 is the floor**, because the extension declares 48 and later. The self-contained packages build on `ubuntu-24.04` for that reason: its glibc is older than any distribution with GNOME 48. Do not move them to `ubuntu-latest`.
+- **libpipewire is never bundled.** The capture helper has to match the PipeWire that is running.
+- **Nothing may persist a path from inside an AppImage.** It is mounted somewhere new on every start. Anything setup writes down for later names `AppImage.File` and a verb that `AppRun` dispatches on, quoted for whoever parses it.
+- Architecture and pre-release spellings differ per format; both mappings are in `scripts/package/common.sh` and belong nowhere else.
+- `.github/workflows/packages.yml` is the only place packages are built. CI and the release both call it, so change the build there, never in one caller.
+
 ## Platform rules that are easy to get wrong
 
 - `org.gnome.Shell.Screenshot` is closed to third-party callers by a sender whitelist. It introspects fine and then returns `AccessDenied`. Use the XDG portal.
@@ -163,7 +176,7 @@ Each of these fails silently, with a hang rather than an exception.
 
 ## Conventions
 
-- Follow SemVer. Nothing is tagged yet.
+- Follow SemVer. Releases are cut as described in `RELEASING.md`; never push a tag from a terminal.
 - Never commit to `main`. Work on a feature branch.
 - The `.slnx` solution format is used rather than `.sln`.
 - `global.json` pins .NET 10 with `rollForward: latestFeature`.
