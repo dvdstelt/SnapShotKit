@@ -6,6 +6,38 @@ Five binaries, and they must stay together. The daemon finds the overlay, the ed
 
 Beyond the binaries: a systemd user unit, a D-Bus activation file, two desktop entries, the `.ssk` MIME type, icons at nine sizes, and the GNOME Shell extension.
 
+## Three formats, two builds
+
+Every release carries an RPM, a `.deb` and an AppImage, for x86-64 and for arm64.
+
+| Format | Built from | .NET | For |
+|---|---|---|---|
+| RPM | `packaging/snapshotkit.spec`, in a Fedora container | Fedora's own runtime | Fedora 44, and the same package COPR builds |
+| `.deb` | the staged tree, on Ubuntu 24.04 | bundled | Debian 13, Ubuntu 25.04 onwards |
+| AppImage | the same staged tree | bundled | any other distribution with GNOME 48 |
+
+The RPM is deliberately not packed from the staged tree. What someone downloads from a release should be what `dnf install` from COPR gives them, and building it on Fedora from the spec is also what proves the spec still builds where COPR will build it.
+
+The other two carry the runtime because Debian ships no .NET at all. That makes them about 125 MB installed, most of it the runtime, and it is the only real cost.
+
+**GNOME 48 is the floor for every format**, because it is the oldest shell the extension's `metadata.json` declares. Ubuntu 24.04 LTS ships GNOME 46, so a package for it would install an extension that never loads. The same floor is what makes Ubuntu 24.04 the right machine to build the self-contained packages on: a self-contained build links against the build machine's glibc, and every distribution with GNOME 48 has a newer one.
+
+**libpipewire is never bundled.** The capture helper has to speak the protocol of the PipeWire daemon that is running, so every format links the system's copy. The `.deb` depends on it under the name Debian 13 and Ubuntu gave it for the 64-bit `time_t` transition, `libpipewire-0.3-0t64`, with the old name as a fallback.
+
+## One layout
+
+The Makefile's `install` target is the only description of where files go. The RPM installs through it from the spec, and `scripts/package/stage.sh` stages the `.deb` and the AppImage through it with `DESTDIR`, so a layout mistake shows up in all three at once. `SELF_CONTAINED=true` is the only difference between the two builds.
+
+## The AppImage is not one program
+
+A package installs a systemd unit, a D-Bus activation file, launcher entries and the extension into `/usr`. An AppImage can install nothing, and it is mounted at a new path every time it starts and unmounted when it exits, so nothing may ever be pointed at a path inside it.
+
+Two things follow. `AppRun` is a dispatcher: its first argument picks the daemon, the editor or the client, and with none it opens the editor. And `snapshotkit setup`, run from an AppImage (it knows from `$APPIMAGE`), writes a user unit whose `ExecStart` is the AppImage with `daemon`, binds Print to the AppImage with `capture`, copies the extension out of the mount, and installs the launcher entries, icons and `.ssk` type into `~/.local/share` with their `Exec` lines rewritten the same way. Each of those three is read by a different parser with different quoting rules, which is why `AppImage.cs` has three quoting functions.
+
+Setup records where the AppImage was when it ran, so moving the file afterwards breaks Print and the launcher until setup is run again. The shell extension is unaffected, since it only talks D-Bus to the daemon.
+
+The package's own unit and D-Bus activation file are left out of the AppImage, since both point at `/usr/lib/snapshotkit`.
+
 ## The D-Bus activation file is not optional
 
 `/usr/share/dbus-1/services/org.snapshotkit.Daemon.service` is what makes the first capture after a login work. Without it, `snapshotkit capture` and the launcher entry both fail until something has started the daemon, and they fail quietly, which is the worst way to fail.
@@ -50,34 +82,51 @@ Both are in the Makefile, and both were mistakes worth recording.
 
 ## RPM
 
-`packaging/snapshotkit.spec` builds through the Makefile. To build locally:
+`packaging/snapshotkit.spec` builds through the Makefile. To build it the way a release does, from a tarball of `HEAD` with the version from the tags:
 
 ```bash
-rpmbuild -ba packaging/snapshotkit.spec
+sudo dnf builddep packaging/snapshotkit.spec
+scripts/package/rpm.sh
 ```
+
+The script writes the version into a copy of the spec. The spec in the tree keeps its own `Version:`, which is what COPR builds, and the source tarball has no git history for MinVer to read, so the spec passes the version to the Makefile explicitly: `semver` when the release workflow defines it, since a pre-release is spelled differently as an RPM version, and `%{version}` otherwise.
 
 For COPR, the project needs **network access enabled in the build settings**. NuGet restore needs the network and Fedora's mock disables it by default. This is the usual arrangement for .NET packages; the alternative is vendoring every dependency into the source tarball.
 
 The package deliberately does not enable the daemon in `%post`. A capture daemon is a per-user, per-session decision, and a system package has no business making it for every account on the machine. `snapshotkit setup` does it for the user who runs it.
 
-## Releasing
-
-`.github/workflows/release.yml` builds the RPM on a clean Fedora on every push, installs it, and checks the commands landed where they should. Pushing a version tag additionally attaches the package to a GitHub release:
+## The .deb and the AppImage
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+scripts/package/all.sh [linux-x64|linux-arm64] [dist]
 ```
 
-Nothing else is needed. The version comes from the tag and is written into the spec by the workflow, so the spec's own `Version:` only matters for untagged builds.
+This builds on Fedora as well as on Ubuntu: the `.deb` is assembled with `ar` and `tar` rather than `dpkg-deb`, and appimagetool is downloaded if it is not on the path. It needs `pipewire-devel`, `clang` for the ahead-of-time client, and `glib-compile-schemas`.
 
-Building in a Fedora container rather than on the Ubuntu runner is deliberate: the package is built against Fedora's .NET SDK and pipewire, and building it against anything else would prove something other than what is shipped. It is also what caught the `global.json` feature band problem, which only appears when the SDK is the distro's rather than a hand-installed one.
+## Releasing
+
+`RELEASING.md` is the procedure. In short: draft a release on GitHub, dispatch the Release workflow with the draft's tag to attach every package, check them, then publish.
+
+`.github/workflows/packages.yml` is the one place packages are built, and both `ci.yml` and `release.yml` call it. CI builds x86-64 on every push and pull request, installs the RPM on Fedora and the `.deb` on Debian 13, and renders an export from the `.deb` and from the AppImage; a release does the same for both architectures and then attaches the results with a `sha256sums.txt`. A release therefore never attaches something that has not been through CI's steps.
+
+The `.deb` is installed on Debian rather than on the Ubuntu that built it, so a dependency spelled only the way Ubuntu spells it fails there.
+
+Building the RPM in a Fedora container rather than on the Ubuntu runner is deliberate: the package is built against Fedora's .NET SDK and pipewire, and building it against anything else would prove something other than what is shipped. It is also what caught the `global.json` feature band problem, which only appears when the SDK is the distro's rather than a hand-installed one.
+
+arm64 is built on arm64 runners rather than cross-compiled. The capture helper is C against libpipewire and the client and overlay are compiled ahead of time, and all three want a native toolchain.
 
 ## COPR
 
 COPR gives users `dnf install` and automatic updates, which a GitHub release does not. It needs no code: create a project at [copr.fedorainfracloud.org](https://copr.fedorainfracloud.org), set the source to **SCM** pointing at this repository with `packaging/snapshotkit.spec`, and turn on **internet access during builds** — NuGet restore needs the network and mock disables it by default. COPR provides a webhook URL to paste into the repository settings so a push rebuilds.
 
+The spec allows `aarch64` as well as `x86_64`, but COPR only builds the chroots the project has. arm64 `dnf` users need a `fedora-44-aarch64` chroot added to the project, alongside the existing one:
+
+```bash
+copr-cli modify snapshotkit --chroot fedora-44-x86_64 --chroot fedora-44-aarch64
+```
+
 ## What is not packaged yet
 
 - **Flatpak.** Wants the capture shortcut moved to the GlobalShortcuts portal first, since a sandbox cannot write gsettings keybindings or install a shell extension. GNOME 50 does implement that portal, so it is a real option rather than a dead end.
-- **Architectures other than x86_64.** Nothing about the code is x86-specific, but nothing has been built or tested elsewhere, so the spec says `ExclusiveArch: x86_64` rather than claiming otherwise.
+- **Ubuntu 24.04 LTS and anything else before GNOME 48.** The extension would not load. Supporting it means testing the extension against GNOME 46 and declaring it, not changing the packaging.
+- **arm64 on real hardware.** A release builds and installs the arm64 packages and renders an export from them, but nobody has pressed Print on an arm64 machine yet.
