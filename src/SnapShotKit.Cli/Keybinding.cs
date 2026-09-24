@@ -26,6 +26,12 @@ internal static class Keybinding
         var executable = Environment.ProcessPath
             ?? throw new InvalidOperationException("Could not determine the path of this executable.");
 
+        // From an AppImage, this executable is inside a mount that will be gone after the next login,
+        // so the binding names the AppImage and lets its AppRun find the client.
+        var command = AppImage.File is { } image
+            ? $"{AppImage.ShellQuote(image)} capture"
+            : $"{executable} capture";
+
         SnapShotKitPaths.EnsureCreated();
 
         var previous = Get(ShellSchema, ShellKey);
@@ -46,17 +52,22 @@ internal static class Keybinding
         }
 
         Set($"{OurSchema}:{OurPath}", "name", "SnapShotKit capture");
-        Set($"{OurSchema}:{OurPath}", "command", $"{executable} capture");
+        Set($"{OurSchema}:{OurPath}", "command", command);
         Set($"{OurSchema}:{OurPath}", "binding", "Print");
 
         ServiceUnit.Install();
 
         var extension = InstallExtension();
 
+        if (AppImage.File is not null)
+        {
+            DesktopIntegration.Install();
+        }
+
         Console.WriteLine();
         Console.WriteLine("Print is now bound to SnapShotKit.");
         Console.WriteLine($"  was  : {ShellSchema} {ShellKey} = {previous}");
-        Console.WriteLine($"  runs : {executable} capture");
+        Console.WriteLine($"  runs : {command}");
         if (extension)
         {
             Console.WriteLine();
@@ -97,6 +108,7 @@ internal static class Keybinding
         }
 
         ServiceUnit.Remove();
+        DesktopIntegration.Remove();
 
         try
         {

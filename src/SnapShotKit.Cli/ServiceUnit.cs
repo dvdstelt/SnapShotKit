@@ -20,7 +20,11 @@ internal static class ServiceUnit
 
     public static void Install()
     {
-        var daemon = LocateDaemon();
+        // From an AppImage the daemon is inside a mount that only exists while something from it is
+        // running, so the unit starts the AppImage itself and asks its AppRun for the daemon.
+        var daemon = AppImage.File is { } image
+            ? $"{AppImage.SystemdQuote(image)} daemon"
+            : LocateDaemon();
 
         Directory.CreateDirectory(Path.GetDirectoryName(UnitPath)!);
         File.WriteAllText(UnitPath, $"""
