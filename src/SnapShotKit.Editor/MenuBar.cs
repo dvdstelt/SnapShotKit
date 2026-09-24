@@ -8,14 +8,6 @@ using SnapShotKit.Ui;
 
 namespace SnapShotKit.Editor;
 
-/// <summary>One line in a menu: a label, an optional shortcut, and what it does. A null label is a separator.</summary>
-public readonly record struct MenuEntry(string? Label, string? Shortcut, Action? Invoke)
-{
-    public static MenuEntry Separator => new(null, null, null);
-
-    public static MenuEntry Item(string label, string? shortcut, Action invoke) => new(label, shortcut, invoke);
-}
-
 /// <summary>
 /// The application's menu bar and the wordmark beside it.
 ///
@@ -30,7 +22,6 @@ public readonly record struct MenuEntry(string? Label, string? Shortcut, Action?
 public sealed class MenuBar : Border
 {
     const double BarHeight = 34;
-    const double MenuWidth = 252;
 
     readonly TextBlock fileName;
     readonly TextBlock dirtyState;
@@ -120,7 +111,7 @@ public sealed class MenuBar : Border
 
             if (!wasOpen)
             {
-                popup.Child = BuildMenu(entries(), popup);
+                popup.Child = PopupMenu.Build(entries(), popup);
                 popup.IsOpen = true;
                 Highlight(header, label, open: true);
             }
@@ -175,68 +166,16 @@ public sealed class MenuBar : Border
         }
     }
 
-    static Control BuildMenu(IReadOnlyList<MenuEntry> entries, Popup popup)
+    /// <summary>
+    /// Says that nothing is open.
+    ///
+    /// Blank rather than "saved": a window holding no document has not saved anything, and a bar
+    /// reading "saved" beside an empty canvas is a reassurance about work that does not exist.
+    /// </summary>
+    public void ShowNothing()
     {
-        var items = new StackPanel { Margin = new Thickness(0, Tokens.Space.S1) };
-
-        foreach (var entry in entries)
-        {
-            if (entry.Label is null)
-            {
-                items.Children.Add(new Border
-                {
-                    Height = 1,
-                    Background = Tokens.DividerBrush,
-                    Margin = new Thickness(0, Tokens.Space.S1)
-                });
-
-                continue;
-            }
-
-            var label = Labels.Body(entry.Label, 13.5, Tokens.Neutral900Brush);
-            label.VerticalAlignment = VerticalAlignment.Center;
-
-            var shortcut = Labels.Body(entry.Shortcut ?? string.Empty, 12.5, Tokens.Neutral500Brush);
-            shortcut.VerticalAlignment = VerticalAlignment.Center;
-            shortcut.HorizontalAlignment = HorizontalAlignment.Right;
-
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            Grid.SetColumn(label, 0);
-            Grid.SetColumn(shortcut, 1);
-            row.Children.Add(label);
-            row.Children.Add(shortcut);
-
-            var item = new Border
-            {
-                Child = row,
-                Padding = new Thickness(Tokens.Space.S4, 5),
-                Background = Tokens.BgBrush,
-                Cursor = new Cursor(StandardCursorType.Hand)
-            };
-
-            var invoke = entry.Invoke;
-            item.PointerPressed += (_, _) =>
-            {
-                popup.IsOpen = false;
-                invoke?.Invoke();
-            };
-
-            item.PointerEntered += (_, _) => item.Background = Tokens.Accent100Brush;
-            item.PointerExited += (_, _) => item.Background = Tokens.BgBrush;
-
-            items.Children.Add(item);
-        }
-
-        return Blueprint.Wrap(new Border
-        {
-            Width = MenuWidth,
-            Background = Tokens.BgBrush,
-            BorderBrush = Tokens.DividerBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = Tokens.Radius,
-            BoxShadow = Tokens.ShadowLg,
-            Child = items
-        }, drawFrame: false);
+        fileName.Text = string.Empty;
+        dirtyState.Text = string.Empty;
     }
 
     /// <summary>Shows which snapshot is open and whether it has been saved.</summary>

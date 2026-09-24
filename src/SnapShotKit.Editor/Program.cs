@@ -18,6 +18,9 @@ internal static class Program
     /// <summary>When set, render straight to this path and exit without showing a window.</summary>
     internal static string? ExportPath;
 
+    /// <summary>Open the library window rather than the editor, when no snapshot was given.</summary>
+    internal static bool Library;
+
     public static int Main(string[] args)
     {
         Crash.Install();
@@ -28,6 +31,12 @@ internal static class Program
 
         for (var i = 0; i < args.Length; i++)
         {
+            if (args[i] == "--library")
+            {
+                Library = true;
+                continue;
+            }
+
             if (args[i] == "--export")
             {
                 if (i + 1 < args.Length)
@@ -44,8 +53,9 @@ internal static class Program
             }
         }
 
-        // Launched with no snapshot, it opens the library. It is a tool in its own right, not only
-        // something the capture path hands work to.
+        // Launched with no snapshot, it opens the editor with nothing on the canvas, or the library
+        // when asked for. It is a tool in its own right, not only something the capture path hands
+        // work to.
         if (path is not null)
         {
             if (!File.Exists(path))
@@ -81,24 +91,70 @@ internal sealed class EditorApp : Application
         {
             try
             {
+                // What the panel menu's "Open editor" and the application launcher both start. The
+                // editor rather than the library: somebody reaching for an editor has something to
+                // edit, and the recent captures and the clipboard are both one step away in it,
+                // where the library would be a window to get past first.
+                if (Program.SnapshotPath.Length == 0 && !Program.Library)
+                {
+                    desktop.MainWindow = new EditorWindow(null);
+                    base.OnFrameworkInitializationCompleted();
+                    return;
+                }
+
                 if (Program.SnapshotPath.Length == 0)
                 {
                     var library = new LibraryWindow();
                     library.Chosen += chosen => new EditorWindow(Snapshot.Open(chosen)).Show();
+
+                    library.NewRequested += paste =>
+                    {
+                        var editor = new EditorWindow(Snapshot.Blank());
+                        editor.Show();
+
+                        if (paste)
+                        {
+                            _ = editor.PasteAsync();
+                        }
+                    };
 
                     desktop.MainWindow = library;
                     base.OnFrameworkInitializationCompleted();
                     return;
                 }
 
-                var snapshot = Snapshot.Open(Program.SnapshotPath);
+                // Handed a picture rather than a snapshot, which is what the file manager's "Open
+                // With" does: it becomes one first. Deciding on the name rather than on the
+                // contents, because the desktop entry advertises exactly these types and a file
+                // called `.ssk` that is really a PNG is a different problem from this one.
+                //
+                // Only kept when it is going to be edited. One handed over with somewhere to export
+                // to is being converted, and is rendered from memory: written out first, every run
+                // of a script would leave another snapshot in the library.
+                var picture = ImageImport.Handles(Program.SnapshotPath);
+
+                var snapshot = picture && Program.ExportPath is not null
+                    ? ImageImport.Wrap(Program.SnapshotPath)
+                    : Snapshot.Open(picture ? ImageImport.Create(Program.SnapshotPath) : Program.SnapshotPath);
 
                 if (Program.ExportPath is { } exportPath)
                 {
                     // Rendering needs the graphics stack, so this runs inside the app lifetime even
                     // though no window is ever shown.
-                    using var blurs = new BlurCache(snapshot.OriginalPng);
-                    Export.ToFile(snapshot, blurs, exportPath);
+                    using var blurs = new BlurCache(snapshot);
+
+                    try
+                    {
+                        Export.ToFile(snapshot, blurs, exportPath);
+                    }
+                    catch (Exception exception)
+                    {
+                        // Said as its own failure rather than falling through to the handler
+                        // below, which would report a snapshot that opened perfectly well as one
+                        // that could not be opened.
+                        Console.Error.WriteLine($"snapshotkit-editor: could not export to {exportPath}: {exception.Message}");
+                        Environment.Exit(1);
+                    }
 
                     Console.WriteLine(exportPath);
 

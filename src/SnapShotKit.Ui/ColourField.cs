@@ -11,10 +11,9 @@ namespace SnapShotKit.Ui;
 /// The annotation colour control: a few swatches for the common cases, and a picker for everything
 /// else.
 ///
-/// The palette leads with red rather than the interface accent. The design system's single-accent
-/// rule governs the application's own surfaces, but an annotation is a mark on somebody else's
-/// screenshot: it has to read as deliberate against arbitrary pixels underneath, and red is the
-/// convention every reader of a screenshot already knows.
+/// The palette departs from the design system's single-accent rule, deliberately. That rule governs
+/// the application's own surfaces; an annotation is a mark on somebody else's screenshot, and it
+/// has to read as deliberate against arbitrary pixels underneath.
 ///
 /// The last swatch is the picker. It shows the current colour whenever that colour is not one of
 /// the presets, so a custom choice stays visible on the band rather than disappearing the moment
@@ -22,14 +21,26 @@ namespace SnapShotKit.Ui;
 /// </summary>
 public sealed class ColourField : StackPanel
 {
-    /// <summary>The presets, in the order they are shown. Red, three steels, and the two neutrals.</summary>
+    /// <summary>
+    /// The presets, in the order they are shown.
+    ///
+    /// Black and white first, and both of them the real thing rather than a shade near it. They are
+    /// what a fill, a plate or a mark on a light or a dark screenshot most often wants, and two
+    /// swatches a few points apart from each other and from black are a choice nobody can make on
+    /// sight. The tonal ramps are for the interface, which is why they are not here.
+    ///
+    /// Then the colours a screenshot is actually marked up in. Red leads them because it is the
+    /// convention every reader of a screenshot already knows, and it stays the colour a new
+    /// annotation is drawn in.
+    /// </summary>
     public static readonly string[] Palette =
     [
+        "#000000",
+        "#FFFFFF",
         Tokens.AnnotationDefault,
-        "#5980A6",
-        "#1D2D3D",
-        "#2B2B2D",
-        "#F5F5F8"
+        "#F5A524",
+        "#22A45D",
+        "#2F6FE0"
     ];
 
     const double SwatchSize = 18;

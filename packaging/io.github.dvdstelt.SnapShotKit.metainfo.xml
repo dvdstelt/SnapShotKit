@@ -15,7 +15,7 @@
   <summary>Capture a region of the screen and annotate it</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  <project_license>LicenseRef-SnapShotKit</project_license>
 
   <developer id="io.github.dvdstelt">
     <name>Dennis van der Stelt</name>
@@ -34,7 +34,8 @@
     <p>
       Annotations are kept as objects alongside the untouched capture, so anything drawn can be
       moved, restyled or removed next week, and the picture underneath is never modified. Exporting
-      to PNG or JPEG renders the document rather than being the document.
+      to PNG, JPEG or WebP renders the document rather than being the document, and asks first
+      what the file should be and where it goes.
     </p>
     <p>Features:</p>
     <ul>
@@ -42,8 +43,14 @@
       <li>Arrows, boxes, blur, text and numbered markers, all editable after the fact</li>
       <li>Blur that obscures the picture without ever covering the annotations over it</li>
       <li>A library of past captures, grouped by day</li>
-      <li>Export to PNG or JPEG, or copy straight to the clipboard</li>
+      <li>Any image opened from the file manager, wrapped in a snapshot and annotated the same way</li>
+      <li>Export to PNG, JPEG or WebP, with transparency, compression and quality settings</li>
+      <li>Copy the annotated capture straight to the clipboard</li>
     </ul>
+    <p>
+      SnapShotKit is free to use while it is pre-1.0. From version 1.0.0 it will cost 15 euro,
+      paid once, with updates included and no subscription. The source stays published either way.
+    </p>
   </description>
 
   <categories>

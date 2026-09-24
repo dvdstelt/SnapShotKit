@@ -12,6 +12,10 @@
 // from a menu item rather than a shortcut is the only way to catch some of them. The same menu is
 // the obvious place to reach the editor and the folder the captures land in.
 //
+// The third is knowing where the windows are. Wayland tells a client nothing about any window but
+// its own, so picking a window to capture is only possible if something inside the compositor says
+// where they are. The extension answers that one question, for the daemon and nobody else.
+//
 // Everything is asked of the daemon over D-Bus. The extension deliberately knows no paths and
 // launches no processes: it runs inside the compositor, where a mistake takes the desktop with it,
 // and the daemon already knows where everything lives in a way that survives being packaged.
@@ -30,6 +34,20 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const SERVICE = 'org.snapshotkit.Daemon';
 const OBJECT = '/org/snapshotkit/Daemon';
+
+// What the daemon asks of the shell. Exported on the shell's own connection, since an extension
+// has no bus name of its own.
+const SHELL_OBJECT = '/org/snapshotkit/Shell';
+
+const SHELL_INTERFACE = `
+<node>
+  <interface name="org.snapshotkit.Shell">
+    <method name="Windows">
+      <arg type="a(iiii)" direction="out" name="windows"/>
+      <arg type="a(iiii)" direction="out" name="monitors"/>
+    </method>
+  </interface>
+</node>`;
 
 const Indicator = GObject.registerClass(
 class SnapShotKitIndicator extends PanelMenu.Button {
@@ -75,7 +93,82 @@ export default class SnapShotKitExtension extends Extension {
 
         Main.panel.addToStatusArea(this.uuid, this._indicator);
 
+        this._exportWindows();
+
         console.log('snapshotkit: keybindings and panel menu registered');
+    }
+
+    // Where the windows are is nobody's business but the capture's. GNOME closed its own window
+    // introspection to outside callers for that reason, and an extension that handed the same
+    // thing to anything on the session bus would be reopening it. So the daemon's bus name is
+    // watched, and only whoever owns it gets an answer. Watching is asynchronous on purpose: a
+    // blocking bus call made from inside the compositor stalls the desktop while it waits.
+    _exportWindows() {
+        this._daemonOwner = null;
+
+        this._daemonWatch = Gio.bus_watch_name(
+            Gio.BusType.SESSION, SERVICE, Gio.BusNameWatcherFlags.NONE,
+            (connection, name, owner) => { this._daemonOwner = owner; },
+            () => { this._daemonOwner = null; });
+
+        this._shell = Gio.DBusExportedObject.wrapJSObject(SHELL_INTERFACE, this);
+        this._shell.export(Gio.DBus.session, SHELL_OBJECT);
+    }
+
+    // Called by the bus for org.snapshotkit.Shell.Windows. The Async suffix is how GJS hands over
+    // the invocation, which is the only place the caller's name can be read.
+    WindowsAsync(parameters, invocation) {
+        if (!this._daemonOwner || invocation.get_sender() !== this._daemonOwner) {
+            invocation.return_dbus_error('org.snapshotkit.Shell.NotAllowed', 'Only the SnapShotKit daemon may ask.');
+            return;
+        }
+
+        try {
+            invocation.return_value(new GLib.Variant('(a(iiii)a(iiii))', [this._windows(), this._monitors()]));
+        } catch (error) {
+            console.error(`snapshotkit: could not list the windows: ${error.message}`);
+            invocation.return_dbus_error('org.snapshotkit.Shell.Failed', error.message);
+        }
+    }
+
+    // Topmost first, which is the order a press on the frozen screen has to be tried in. Only what
+    // is actually showing on this workspace: a minimised window has a rectangle too, and offering
+    // it would be offering a piece of whatever is on screen where it used to be.
+    _windows() {
+        const workspace = global.workspace_manager.get_active_workspace();
+
+        return global.get_window_actors()
+            .map(actor => actor.meta_window)
+            .filter(window => window
+                && !window.minimized
+                && window.showing_on_its_workspace()
+                && window.located_on_workspace(workspace)
+                && [
+                    Meta.WindowType.NORMAL,
+                    Meta.WindowType.DIALOG,
+                    Meta.WindowType.MODAL_DIALOG,
+                    Meta.WindowType.UTILITY,
+                ].includes(window.get_window_type()))
+            .reverse()
+            .map(window => {
+                // The frame rather than the buffer: the buffer includes the shadow, and a captured
+                // window with a margin of somebody else's desktop round it is not the window.
+                const frame = window.get_frame_rect();
+                return [frame.x, frame.y, frame.width, frame.height];
+            });
+    }
+
+    // Primary first, because the daemon has to guess which monitor its frame shows and the primary
+    // is the better guess.
+    _monitors() {
+        const monitors = Main.layoutManager.monitors.map(monitor => [monitor.x, monitor.y, monitor.width, monitor.height]);
+        const primary = Main.layoutManager.primaryIndex;
+
+        if (primary > 0 && primary < monitors.length) {
+            monitors.unshift(...monitors.splice(primary, 1));
+        }
+
+        return monitors;
     }
 
     // SnapShotKit binds Print through gnome-settings-daemon as well, because a freshly installed
@@ -115,6 +208,16 @@ export default class SnapShotKitExtension extends Extension {
 
         this._indicator?.destroy();
         this._indicator = null;
+
+        this._shell?.unexport();
+        this._shell = null;
+
+        if (this._daemonWatch) {
+            Gio.bus_unwatch_name(this._daemonWatch);
+            this._daemonWatch = null;
+        }
+
+        this._daemonOwner = null;
 
         this._settings = null;
         console.log('snapshotkit: keybindings and panel menu removed');

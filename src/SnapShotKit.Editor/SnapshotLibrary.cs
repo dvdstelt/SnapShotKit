@@ -57,7 +57,7 @@ public static class SnapshotLibrary
             using var json = JsonDocument.Parse(stream);
 
             var canvas = json.RootElement.GetProperty("canvas");
-            var layers = json.RootElement.TryGetProperty("layers", out var value) ? value.GetArrayLength() : 0;
+            var layers = json.RootElement.TryGetProperty("layers", out var value) ? Objects(value).Count() : 0;
 
             return $"{canvas.GetProperty("width").GetInt32()} x {canvas.GetProperty("height").GetInt32()}"
                 + $"   {layers} annotation(s)";
@@ -67,6 +67,17 @@ public static class SnapshotLibrary
             return $"could not be read: {exception.Message}";
         }
     }
+
+    /// <summary>
+    /// The layers worth describing, which is every one but the capture's own.
+    ///
+    /// A snapshot written since the capture became a layer has one before anything is drawn on it,
+    /// and "1 image" under every capture in the library says nothing about any of them. A picture
+    /// pasted in is something somebody did, and is counted like an arrow is.
+    /// </summary>
+    static IEnumerable<JsonElement> Objects(JsonElement layers) => layers.EnumerateArray().Where(layer =>
+        !(layer.TryGetProperty("type", out var type) && type.GetString() == "image"
+            && layer.TryGetProperty("source", out var source) && source.GetString() == ImageAnnotation.Capture));
 
     /// <summary>
     /// What has been drawn on a capture, in words.
@@ -88,14 +99,16 @@ public static class SnapshotLibrary
             using var stream = document.Open();
             using var json = JsonDocument.Parse(stream);
 
-            if (!json.RootElement.TryGetProperty("layers", out var layers) || layers.GetArrayLength() == 0)
+            var objects = json.RootElement.TryGetProperty("layers", out var layers) ? Objects(layers).ToList() : [];
+
+            if (objects.Count == 0)
             {
                 return "no objects";
             }
 
             var counts = new Dictionary<string, int>();
 
-            foreach (var layer in layers.EnumerateArray())
+            foreach (var layer in objects)
             {
                 var kind = layer.TryGetProperty("type", out var type) ? type.GetString() ?? "object" : "object";
                 counts[kind] = counts.GetValueOrDefault(kind) + 1;
@@ -105,7 +118,7 @@ public static class SnapshotLibrary
             // than the total, so it collapses to a count.
             if (counts.Count > 2)
             {
-                return $"{layers.GetArrayLength()} objects";
+                return $"{objects.Count} objects";
             }
 
             // Ordered, so the same document always describes itself the same way: a dictionary's
@@ -121,5 +134,38 @@ public static class SnapshotLibrary
         }
     }
 
-    public static void Delete(SnapshotEntry entry) => File.Delete(entry.Path);
+    /// <summary>
+    /// A name in the snapshots folder that nothing has taken yet, made from <paramref name="name"/>.
+    ///
+    /// Named after something the user recognises rather than given the next capture number: an
+    /// imported picture after its own file, a blank canvas after being untitled. Colliding names
+    /// take a suffix.
+    /// </summary>
+    public static string FreePath(string name)
+    {
+        // A file whose whole name is its extension leaves nothing to name the snapshot after, and
+        // it still has to land somewhere.
+        var stem = string.IsNullOrWhiteSpace(name) ? "image" : name;
+
+        var candidate = Path.Combine(Folder, $"{stem}.ssk");
+        if (!File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        for (var number = 2; number < 10000; number++)
+        {
+            candidate = Path.Combine(Folder, $"{stem}-{number}.ssk");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException($"Could not find a free name for {stem}.");
+    }
+
+    public static void Delete(SnapshotEntry entry) => Delete(entry.Path);
+
+    public static void Delete(string path) => File.Delete(path);
 }

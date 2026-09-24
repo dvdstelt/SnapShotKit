@@ -16,7 +16,7 @@ Version:        0.1.0
 Release:        1%{?dist}
 Summary:        Capture a region of the screen and annotate it
 
-License:        GPL-3.0-or-later
+License:        LicenseRef-SnapShotKit
 URL:            https://github.com/dvdstelt/snapshotkit
 Source0:        %{url}/archive/v%{version}/%{forgename}-%{version}.tar.gz
 
@@ -44,6 +44,9 @@ Requires:       xdg-desktop-portal
 Requires:       wl-clipboard
 
 Recommends:     xdg-desktop-portal-gnome
+# Printing hands a finished page to CUPS through lp and asks lpstat what printers there are.
+# Without them the print dialog still opens, and can only save the page as a PDF.
+Recommends:     cups-client
 Recommends:     gnome-shell
 
 %description

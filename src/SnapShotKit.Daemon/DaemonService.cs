@@ -6,11 +6,20 @@ using Tmds.DBus.Protocol;
 namespace SnapShotKit.Daemon;
 
 /// <summary>Exposes the daemon on the session bus. This is the only way in.</summary>
-public sealed class DaemonService(CaptureEngine engine) : IPathMethodHandler
+public sealed class DaemonService(CaptureEngine engine, DBusConnection connection) : IPathMethodHandler
 {
     // One capture at a time. The helper writes every frame into the same shared file, so starting a
     // second capture while an overlay is still open would change the picture under the user.
     readonly SemaphoreSlim gate = new(1, 1);
+
+    /// <summary>
+    /// Set while a scrolling capture is watching the screen, and completed to end it.
+    ///
+    /// A scrolling capture holds the gate for as long as it runs, and the one thing the user has to
+    /// say "that is all of it" with is the capture key. So a capture asked for while one of these is
+    /// running is not a second capture waiting its turn: it is the end of the first.
+    /// </summary>
+    volatile TaskCompletionSource? scrolling;
 
     public string Path => SnapShotKitDBus.ObjectPath;
 
@@ -93,6 +102,13 @@ public sealed class DaemonService(CaptureEngine engine) : IPathMethodHandler
 
     async ValueTask HandleCaptureAsync(MethodContext context, bool withOverlay)
     {
+        if (scrolling is { } running)
+        {
+            running.TrySetResult();
+            Reply(context, string.Empty);
+            return;
+        }
+
         if (!await gate.WaitAsync(TimeSpan.FromSeconds(30), context.RequestAborted))
         {
             context.ReplyError($"{SnapShotKitDBus.Interface}.Busy", "Another capture is still in progress.");
@@ -111,8 +127,10 @@ public sealed class DaemonService(CaptureEngine engine) : IPathMethodHandler
 
                 if (withOverlay)
                 {
+                    var windows = await ShellWindows.InFrameAsync(connection, capture.Width, capture.Height, context.RequestAborted);
+
                     var answer = await OverlayClient.AskAsync(CaptureEngine.FramePath,
-                        capture.Width, capture.Height, capture.Stride, context.RequestAborted);
+                        capture.Width, capture.Height, capture.Stride, windows, context.RequestAborted);
 
                     if (answer.Choice == OverlayChoice.Cancelled)
                     {
@@ -141,6 +159,40 @@ public sealed class DaemonService(CaptureEngine engine) : IPathMethodHandler
 
                         // Nothing was written, so there is no path to hand back.
                         Reply(context, string.Empty);
+                        return;
+                    }
+
+                    if (answer.Choice == OverlayChoice.Scroll)
+                    {
+                        // Every look at the screen on the slow path is a portal screenshot: most
+                        // of a second each, a file written to disk each, and on some desktops a
+                        // flash each. Following a scroll with that is not following it.
+                        if (engine.Backend != CaptureBackend.ScreenCast)
+                        {
+                            throw new InvalidOperationException("A scrolling capture needs the fast capture path, which is not available: "
+                                + (engine.LastError ?? "unknown reason"));
+                        }
+
+                        scrolling = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                        try
+                        {
+                            using var tall = await ScrollCapture.RunAsync(engine, capture, region.Value, scrolling.Task, context.RequestAborted);
+
+                            savedPath = await SnapshotWriter.WriteAsync(tall, region.Value with { Height = tall.Height },
+                                capture.Width, capture.Height, context.RequestAborted);
+                        }
+                        finally
+                        {
+                            scrolling = null;
+                        }
+
+                        if (EditorLauncher.TryOpen(savedPath))
+                        {
+                            Log.Info($"Opened the scrolling capture in the editor -> {savedPath}");
+                        }
+
+                        Reply(context, savedPath);
                         return;
                     }
 

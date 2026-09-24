@@ -2,11 +2,17 @@
 
 A screenshot and annotation tool for Linux, in the spirit of Snagit.
 
-Press Print and the whole screen is captured immediately, so timing a capture is easy. An overlay then appears on the frozen image, where you either keep the whole screen or drag out a region; nothing moves under the cursor while you aim, because what you are aiming at is already a photograph.
+Press Print and the whole screen is captured immediately, so timing a capture is easy. An overlay then appears on the frozen image, where you keep the whole screen, drag out a region, or click a window to take exactly that window; nothing moves under the cursor while you aim, because what you are aiming at is already a photograph.
 
-The result opens in an editor for arrows, boxes, blur, text and numbered markers, and is filed in a library grouped by day.
+A region can also be followed while you scroll it: choose Scrolling capture, scroll the page at a steady pace, and press Print again or simply stop, and everything that passed through the region opens in the editor as one tall picture.
 
-Annotations are kept as objects alongside the untouched capture, so anything drawn can be moved, restyled or removed next week, and the picture underneath is never modified. Exporting to PNG or JPEG renders the document rather than being the document.
+The result opens in an editor for arrows and lines, boxes, ellipses and highlights, text and numbered markers, regions hidden by a blur, by squares or by a solid bar, a spotlight that dims everything but what matters, a lens that shows a detail larger, callouts, freehand drawing, and an eyedropper that takes colours from the picture itself, where the canvas can also be cropped or given transparent space around it, and is filed in a library grouped by day.
+
+Annotations are kept as objects alongside the untouched capture, so anything drawn can be moved, restyled or removed next week, and the picture underneath is never modified. Exporting to PNG, JPEG or WebP renders the document rather than being the document, and asks first: transparency kept or flattened, WebP lossless or lossy and how hard to compress, JPEG quality, and whether the file lands in the exports folder or beside the picture it came from.
+
+Printing (Ctrl+P) shows the sheet of paper with the picture on it. The picture can be dragged to where it is wanted, pulled to the middle, sized from a corner or to an exact width in millimetres, or fitted to the page width, on A3 to Legal, upright or on its side, in as many copies as needed. It prints through CUPS, or saves the same page as a PDF.
+
+An image that was never captured here can be annotated too. Open one from the File menu, or right-click it in the file manager and open it with SnapShotKit, and it is wrapped in a snapshot of its own; the file you pointed at is only read.
 
 Target platform is Fedora on GNOME Wayland.
 
@@ -47,11 +53,13 @@ Both halves also stand on their own:
 ```bash
 snapshotkit capture              # capture, and choose a region
 snapshotkit capture --after 5    # wait first, for menus that close on a keypress
-snapshotkit-editor               # the library
+snapshotkit-editor               # the editor, with nothing open
+snapshotkit-editor --library     # the library
 snapshotkit-editor shot.ssk      # one snapshot
+snapshotkit-editor diagram.png   # any image, brought in as a snapshot
 ```
 
-Both appear in the applications list as **SnapShotKit** and **Take a Screenshot**, and `.ssk` files open in the editor from the file manager.
+Both appear in the applications list as **SnapShotKit** and **Take a Screenshot**. `.ssk` files open in the editor from the file manager, and any PNG, JPEG, WebP, BMP, GIF or TIFF can be sent to it through **Open With**.
 
 The panel menu offers a delayed capture, the editor and the snapshots folder.
 
@@ -77,8 +85,12 @@ The panel menu offers a delayed capture, the editor and the snapshots folder.
 - [docs/packaging.md](docs/packaging.md) — building a package
 - [docs/spikes/](docs/spikes/) — what was actually measured, including the things that did not work
 
-## Licence
+## Licence and price
 
-GNU General Public License v3.0 or later. See [LICENSE](LICENSE).
+SnapShotKit is free to use while it is pre-1.0. From version 1.0.0 it will cost 15 euro, paid once, with updates included. There is no subscription and there will not be one.
+
+The source stays visible either way, and you are welcome to read it, build it and run what you have built. What you may not do is publish your own build or ship a modified version. Contributors with a merged pull request get a free perpetual licence, so nobody is charged for a bug they fixed themselves.
+
+See [LICENSE](LICENSE) for the terms and [CONTRIBUTING.md](CONTRIBUTING.md) for how contributions work. This is a source-available licence rather than an open source one, and it does not pretend otherwise. Version 0.1.0 was released under the GPL and remains available under those terms.
 
 The bundled Barlow and Barlow Condensed fonts are under the SIL Open Font License, which travels with them in `src/SnapShotKit.Ui/Assets/Fonts/OFL.txt`.

@@ -1,7 +1,7 @@
 {
   "uuid": "snapshotkit@dvdstelt.github.io",
   "name": "SnapShotKit",
-  "description": "Capture shortcuts and a panel menu for SnapShotKit. Registers its keybindings inside GNOME Shell, so they still fire while a shell menu holds a keyboard grab, and offers a delayed capture, the editor and the snapshots folder from the top bar.",
+  "description": "Capture shortcuts and a panel menu for SnapShotKit. Registers its keybindings inside GNOME Shell, so they still fire while a shell menu holds a keyboard grab, offers a delayed capture, the editor and the snapshots folder from the top bar, and tells the SnapShotKit daemon where the windows are so that one can be picked to capture.",
   "shell-version": ["48", "49", "50"],
   "settings-schema": "org.gnome.shell.extensions.snapshotkit",
   "session-modes": ["user"],

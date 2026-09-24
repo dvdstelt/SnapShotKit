@@ -53,6 +53,16 @@ public static class Lucide
     /// <summary>x. Cancel.</summary>
     public const string Cancel = "M18,6 L6,18 M6,6 L18,18";
 
+    /// <summary>
+    /// trash. Deleting a capture from disk.
+    ///
+    /// The plain one rather than trash-2, which rules the bin with two vertical lines. Those lines
+    /// sit two units apart on the 24 unit grid, so on the badge that appears over a thumbnail they
+    /// close up into a solid block and the whole glyph stops reading as a bin.
+    /// </summary>
+    public const string Delete = "M3,6 H21 M19,6 V20 A2,2 0 0 1 17,22 H7 A2,2 0 0 1 5,20 V6 "
+        + "M8,6 V4 A2,2 0 0 1 10,2 H14 A2,2 0 0 1 16,4 V6";
+
     /// <summary>monitor. Whole screen.</summary>
     public const string WholeScreen = "M4,3 H20 A2,2 0 0 1 22,5 V15 A2,2 0 0 1 20,17 H4 A2,2 0 0 1 2,15 V5 A2,2 0 0 1 4,3 Z "
         + "M8,21 H16 M12,17 V21";
@@ -60,8 +70,45 @@ public static class Lucide
     /// <summary>circle with a one in it. The numbered marker, drawn rather than taken from the set, which has no numbered disc.</summary>
     public const string Step = "M12,3 A9,9 0 1 1 11.9,3 Z M10.6,9.6 L12.6,8.4 L12.6,15.6 M10.6,15.6 L14.6,15.6";
 
+    /// <summary>chevron-down. Opens what is behind a field, such as the list of printers.</summary>
+    public const string More = "M6,9 L12,15 L18,9";
+
+    /// <summary>chevrons-down. Following something as it is scrolled.</summary>
+    public const string Scroll = "M7,6 L12,11 L17,6 M7,13 L12,18 L17,13";
+
+    /// <summary>scan. The four corners of a frame with nothing between them: the part left lit while the rest is dimmed.</summary>
+    public const string Spotlight = "M3,7 V5 A2,2 0 0 1 5,3 H7 M17,3 H19 A2,2 0 0 1 21,5 V7 M21,17 V19 A2,2 0 0 1 19,21 H17 M7,21 H5 A2,2 0 0 1 3,19 V17 M9,9 H15 V15 H9 Z";
+
+    /// <summary>pencil. Drawing by hand.</summary>
+    public const string Pen = "M17,3 L21,7 L8,20 L3,21 L4,16 Z M14,6 L18,10";
+
+    /// <summary>zoom-in. A lens over part of the picture.</summary>
+    public const string Magnify = "M11,3 A8,8 0 1 1 10.9,3 Z M21,21 L16.7,16.7 M11,8 V14 M8,11 H14";
+
+    /// <summary>plus. Zooming in.</summary>
+    public const string Plus = "M5,12 H19 M12,5 V19";
+
+    /// <summary>minus. Zooming out.</summary>
+    public const string Minus = "M5,12 H19";
+
+    /// <summary>scissors. Cutting a band out of the picture.</summary>
+    public const string Cut = "M9,6 A3,3 0 1 1 3,6 A3,3 0 1 1 9,6 Z M8.12,8.12 L12,12 M20,4 L8.12,15.88 "
+        + "M9,18 A3,3 0 1 1 3,18 A3,3 0 1 1 9,18 Z M14.8,14.8 L20,20";
+
+    /// <summary>crop. Resizing the canvas.</summary>
+    public const string Crop = "M6,2 V16 A2,2 0 0 0 8,18 H22 M18,22 V8 A2,2 0 0 0 16,6 H2";
+
     /// <summary>folder. The library.</summary>
     public const string Library = "M4,20 A2,2 0 0 1 2,18 V5 A2,2 0 0 1 4,3 H9 L12,6 H20 A2,2 0 0 1 22,8 V18 A2,2 0 0 1 20,20 Z";
+
+    /// <summary>pin. Keeping something where it is: the strip up, or a capture at the front of it.</summary>
+    public const string Pin = "M12,17 V22 M9,10.76 a2,2 0 0 1 -1.11,1.79 l-1.78,0.9 A2,2 0 0 0 5,15.24 V16 "
+        + "a1,1 0 0 0 1,1 H18 a1,1 0 0 0 1,-1 V15.24 a2,2 0 0 0 -1.11,-1.79 l-1.78,-0.9 A2,2 0 0 1 15,10.76 V7 "
+        + "a1,1 0 0 1 1,-1 a2,2 0 0 0 0,-4 H8 a2,2 0 0 0 0,4 a1,1 0 0 1 1,1 Z";
+
+    /// <summary>link. Where a file is, rather than what is in it.</summary>
+    public const string Location = "M10,13 a5,5 0 0 0 7.54,0.54 l3,-3 a5,5 0 0 0 -7.07,-7.07 l-1.72,1.71 "
+        + "M14,11 a5,5 0 0 0 -7.54,-0.54 l-3,3 a5,5 0 0 0 7.07,7.07 l1.71,-1.71";
 
     /// <summary>
     /// Builds a glyph at a given size.

@@ -10,7 +10,7 @@ namespace SnapShotKit.Daemon;
 /// </summary>
 public static class EditorLauncher
 {
-    /// <param name="snapshotPath">The snapshot to open, or null to open the library instead.</param>
+    /// <param name="snapshotPath">The snapshot to open, or null to open the editor with nothing on its canvas.</param>
     public static bool TryOpen(string? snapshotPath = null)
     {
         try

@@ -49,6 +49,20 @@ public static class Tokens
     /// <summary>Every hairline border in the system: text at 16% alpha, always one pixel.</summary>
     public static readonly Color Divider = Color.FromArgb(0x29, 0x1D, 0x1F, 0x20);
 
+    /// <summary>
+    /// The one red the interface uses, for a control that destroys something.
+    ///
+    /// The design system's token sheet has no such colour, because its examples never delete
+    /// anything. It is named here rather than written into the one button that needed it first, so
+    /// that the delete button, the delete badge on a thumbnail and whatever comes next are all the
+    /// same red rather than three reds that nearly match.
+    /// </summary>
+    public static readonly Color Danger = Color.FromRgb(0xC5, 0x30, 0x30);
+
+    public static readonly Color DangerHover = Color.FromRgb(0xB0, 0x2A, 0x2A);
+
+    public static readonly Color DangerPressed = Color.FromRgb(0x96, 0x24, 0x24);
+
     // Tonal ramps. Generated in OKLCH on one shared lightness scale, so the same step of any role
     // carries the same visual weight.
 
@@ -80,6 +94,9 @@ public static class Tokens
     public static readonly IBrush TextBrush = new ImmutableSolidColorBrush(Text);
     public static readonly IBrush AccentBrush = new ImmutableSolidColorBrush(Accent);
     public static readonly IBrush DividerBrush = new ImmutableSolidColorBrush(Divider);
+    public static readonly IBrush DangerBrush = new ImmutableSolidColorBrush(Danger);
+    public static readonly IBrush DangerHoverBrush = new ImmutableSolidColorBrush(DangerHover);
+    public static readonly IBrush DangerPressedBrush = new ImmutableSolidColorBrush(DangerPressed);
 
     public static readonly IBrush Neutral100Brush = new ImmutableSolidColorBrush(Neutral100);
     public static readonly IBrush Neutral200Brush = new ImmutableSolidColorBrush(Neutral200);

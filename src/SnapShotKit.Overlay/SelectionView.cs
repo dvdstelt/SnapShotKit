@@ -90,6 +90,34 @@ public sealed class SelectionView : Control
     /// <summary>The provisional capture region, in image pixels.</summary>
     public PixelRect? Selection { get; private set; }
 
+    /// <summary>
+    /// The windows on the frozen screen, topmost first, in image pixels. Empty when nobody could
+    /// say where they are, in which case a region is drawn by hand as it always was.
+    ///
+    /// A window is a region somebody else has already drawn. Pointing at one lights it up and a
+    /// click takes it, and what is taken is an ordinary selection from then on: it has grips, it
+    /// can be nudged, and the same actions apply. There is no separate window mode to be in.
+    /// </summary>
+    public IReadOnlyList<PixelRect> Windows { get; set; } = [];
+
+    /// <summary>The window a click would take: the topmost one under the pointer, while nothing is selected or being drawn.</summary>
+    PixelRect? WindowUnderPointer => hasCursor && Selection is null && dragging == Grip.None
+        ? WindowAt(cursor)
+        : null;
+
+    PixelRect? WindowAt(Point image)
+    {
+        foreach (var window in Windows)
+        {
+            if (window.Contains(new PixelPoint((int)image.X, (int)image.Y)))
+            {
+                return window;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>True while a grip or the box itself is being dragged.</summary>
     public bool IsAdjusting => dragging != Grip.None;
 
@@ -201,10 +229,16 @@ public sealed class SelectionView : Control
     {
         e.Pointer.Capture(null);
 
-        // A click without a drag is a misclick, not a request for a one pixel capture.
+        // A click without a drag is not a request for a one pixel capture. On a window it is a
+        // request for that window; anywhere else it is a misclick.
         if (Selection is { } selection && (selection.Width < 8 || selection.Height < 8))
         {
             Clear();
+
+            if (WindowAt(dragOrigin) is { } window)
+            {
+                Selection = Clamp(window);
+            }
         }
 
         dragging = Grip.None;
@@ -368,7 +402,23 @@ public sealed class SelectionView : Control
         }
         else
         {
-            context.FillRectangle(Dim, bounds);
+            if (WindowUnderPointer is { } window)
+            {
+                // Lit the way a region is, because a click makes it one. Only the edge differs:
+                // nothing has been chosen yet, so there are no grips to take hold of.
+                var lit = ToControl(window);
+
+                context.FillRectangle(Dim, new Rect(0, 0, bounds.Width, lit.Top));
+                context.FillRectangle(Dim, new Rect(0, lit.Bottom, bounds.Width, bounds.Height - lit.Bottom));
+                context.FillRectangle(Dim, new Rect(0, lit.Top, lit.Left, lit.Height));
+                context.FillRectangle(Dim, new Rect(lit.Right, lit.Top, bounds.Width - lit.Right, lit.Height));
+
+                context.DrawRectangle(RegionEdge, lit);
+            }
+            else
+            {
+                context.FillRectangle(Dim, bounds);
+            }
 
             if (hasCursor)
             {

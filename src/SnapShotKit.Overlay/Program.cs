@@ -22,6 +22,9 @@ internal static class Program
     internal static FrameInfo Info;
     internal static bool StartWithMagnifier;
 
+    /// <summary>The windows on the frozen screen, topmost first, when the daemon could find out where they are.</summary>
+    internal static IReadOnlyList<PixelRect> Windows = [];
+
     public static int Main(string[] args)
     {
         if (Option(args, "--frame") is not { } path)
@@ -36,6 +39,8 @@ internal static class Program
             int.Parse(Option(args, "--height") ?? "0"),
             int.Parse(Option(args, "--stride") ?? "0"));
 
+        Windows = ParseWindows(Option(args, "--windows"));
+
         // On by default: it earns its place. M still toggles it, which is useful when judging paint cost.
         StartWithMagnifier = !args.Contains("--no-magnifier");
 
@@ -49,6 +54,30 @@ internal static class Program
         return AppBuilder.Configure<OverlayApp>()
             .UsePlatformDetect()
             .StartWithClassicDesktopLifetime(args);
+    }
+
+    /// <summary>
+    /// `x,y,w,h;x,y,w,h`. Anything that does not read as that is left out rather than refused: the
+    /// windows are a convenience, and an overlay that would not open over a malformed one would be
+    /// trading the capture for it.
+    /// </summary>
+    static IReadOnlyList<PixelRect> ParseWindows(string? list)
+    {
+        List<PixelRect> windows = [];
+
+        foreach (var entry in (list ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = entry.Split(',');
+
+            if (parts.Length == 4
+                && int.TryParse(parts[0], out var x) && int.TryParse(parts[1], out var y)
+                && int.TryParse(parts[2], out var width) && int.TryParse(parts[3], out var height))
+            {
+                windows.Add(new PixelRect(x, y, width, height));
+            }
+        }
+
+        return windows;
     }
 
     static string? Option(string[] args, string name)
@@ -84,12 +113,14 @@ internal sealed class OverlayApp : Application
             desktop = lifetime;
 
             var bitmap = Frame.Load(Program.Info);
-            view = new SelectionView(bitmap) { ShowMagnifier = Program.StartWithMagnifier };
+            view = new SelectionView(bitmap) { ShowMagnifier = Program.StartWithMagnifier, Windows = Program.Windows };
 
             wholeScreenActions = new ActionBar(forRegion: false, Chosen);
             regionActions = new ActionBar(forRegion: true, Chosen) { IsVisible = false };
 
-            hints = new HintBar("Drag to draw a region", "Space — whole screen", "Esc — cancel");
+            hints = Program.Windows.Count > 0
+                ? new HintBar("Drag to draw a region", "Click a window", "Space — whole screen", "Esc — cancel")
+                : new HintBar("Drag to draw a region", "Space — whole screen", "Esc — cancel");
 
             // A transparent canvas over the surface: only the chrome sits in it, so everywhere else
             // keeps reaching the selection view underneath.
@@ -183,6 +214,10 @@ internal sealed class OverlayApp : Application
 
             case OverlayAction.Copy when view.Selection is { } copy:
                 Finish($"region {copy.X} {copy.Y} {copy.Width} {copy.Height} copy");
+                break;
+
+            case OverlayAction.Scroll when view.Selection is { } scroll:
+                Finish($"region {scroll.X} {scroll.Y} {scroll.Width} {scroll.Height} scroll");
                 break;
 
             case OverlayAction.Cancel:

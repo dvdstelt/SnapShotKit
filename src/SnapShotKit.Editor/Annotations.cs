@@ -15,11 +15,29 @@ namespace SnapShotKit.Editor;
 [JsonDerivedType(typeof(BoxAnnotation), "box")]
 [JsonDerivedType(typeof(TextAnnotation), "text")]
 [JsonDerivedType(typeof(StepAnnotation), "step")]
+[JsonDerivedType(typeof(ImageAnnotation), "image")]
+[JsonDerivedType(typeof(SpotlightAnnotation), "spotlight")]
+[JsonDerivedType(typeof(PenAnnotation), "pen")]
+[JsonDerivedType(typeof(MagnifyAnnotation), "magnify")]
 public abstract class Annotation
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
 
     public abstract Annotation Copy();
+
+    /// <summary>
+    /// Takes on another annotation's look, leaving its own geometry and its place in the document
+    /// alone.
+    ///
+    /// What counts as the look is each kind's own business, which is why this lives here rather
+    /// than in the band that offers the ready-made ones. A style is a complete look and not a
+    /// suggestion: it sets everything it covers, so picking one twice gives the same annotation
+    /// both times.
+    /// </summary>
+    public abstract void AdoptStyle(Annotation style);
+
+    /// <summary>Whether it already looks exactly like the given one. False for a different kind of annotation.</summary>
+    public abstract bool WearsStyle(Annotation style);
 }
 
 /// <summary>
@@ -56,11 +74,199 @@ public sealed class ArrowAnnotation : Annotation
     /// </summary>
     public bool DoubleHeaded { get; set; }
 
+    /// <summary>
+    /// No head at either end, which makes it a line.
+    ///
+    /// A line is an arrow that points at nothing rather than a tool of its own: it is drawn, picked
+    /// up, moved and styled in exactly the same way, and somebody who drew an arrow and wanted a
+    /// line should be able to say so without drawing it again. Kept beside
+    /// <see cref="DoubleHeaded"/> rather than replacing it with a count, so that documents written
+    /// before there were lines still mean what they meant.
+    /// </summary>
+    public bool Headless { get; set; }
+
+    /// <summary>How many heads: none, one at the far end, or one at each.</summary>
+    [JsonIgnore]
+    public int Heads
+    {
+        get => Headless ? 0 : DoubleHeaded ? 2 : 1;
+        set
+        {
+            Headless = value <= 0;
+            DoubleHeaded = value >= 2;
+        }
+    }
+
     public override Annotation Copy() => new ArrowAnnotation
     {
         Id = Id, X1 = X1, Y1 = Y1, X2 = X2, Y2 = Y2,
-        Color = Color, Thickness = Thickness, DoubleHeaded = DoubleHeaded
+        Color = Color, Thickness = Thickness, DoubleHeaded = DoubleHeaded, Headless = Headless
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is ArrowAnnotation arrow)
+        {
+            Color = arrow.Color;
+            Thickness = arrow.Thickness;
+            Heads = arrow.Heads;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is ArrowAnnotation arrow
+        && Color == arrow.Color && Thickness == arrow.Thickness && Heads == arrow.Heads;
+}
+
+/// <summary>
+/// A region left at full brightness while everything else on the canvas is dimmed.
+///
+/// The opposite of a box: a box says "look here" by adding something to the place, and this says it
+/// by taking the rest of the picture away. It suits the screenshot where the thing to look at is
+/// large, a whole panel or a dialog, and an outline round it would be one more rectangle among the
+/// dozen the interface already has.
+///
+/// Every spotlight on a picture shares one dimming, with a hole in it for each. Two of them are
+/// two things to look at, not the second one dimming the first.
+/// </summary>
+public sealed class SpotlightAnnotation : RectAnnotation
+{
+    /// <summary>How dark everything else goes, 1 to 100.</summary>
+    public int Dim { get; set; } = 55;
+
+    public static readonly int[] Presets = [35, 55, 75];
+
+    public override Annotation Copy() => new SpotlightAnnotation
+    {
+        Id = Id, X = X, Y = Y, Width = Width, Height = Height, Dim = Dim
+    };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is SpotlightAnnotation spotlight)
+        {
+            Dim = spotlight.Dim;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is SpotlightAnnotation spotlight && Dim == spotlight.Dim;
+}
+
+/// <summary>
+/// A line drawn by hand: wherever the pointer went while the button was down.
+///
+/// For the things no shape fits, a ring round something irregular, a squiggle under a word, a
+/// tick. Kept as the points it passed through rather than as a picture of them, so it can be moved,
+/// recoloured and made thicker afterwards like anything else. It is not resized: a drawing
+/// stretched by a corner is a different drawing, and the honest way to get a bigger one is to draw
+/// it bigger.
+/// </summary>
+public sealed class PenAnnotation : Annotation
+{
+    /// <summary>The points along it, x then y, in image pixels. One flat list because a thousand little objects is a poor way to write a line into a file.</summary>
+    public List<double> Points { get; set; } = [];
+
+    public string Color { get; set; } = SnapShotKit.Ui.Tokens.AnnotationDefault;
+
+    public double Thickness { get; set; } = 4;
+
+    /// <summary>The rectangle the points fall in, not counting the thickness of the line.</summary>
+    [JsonIgnore]
+    public (double X, double Y, double Width, double Height) Bounds
+    {
+        get
+        {
+            if (Points.Count < 2)
+            {
+                return default;
+            }
+
+            double left = double.MaxValue, top = double.MaxValue, right = double.MinValue, bottom = double.MinValue;
+
+            for (var index = 0; index + 1 < Points.Count; index += 2)
+            {
+                left = Math.Min(left, Points[index]);
+                right = Math.Max(right, Points[index]);
+                top = Math.Min(top, Points[index + 1]);
+                bottom = Math.Max(bottom, Points[index + 1]);
+            }
+
+            return (left, top, right - left, bottom - top);
+        }
+    }
+
+    /// <summary>Adds a point, unless the pointer has barely moved: a slow hand would otherwise write hundreds of points into one short stroke.</summary>
+    public void Extend(double x, double y)
+    {
+        if (Points.Count >= 2 && Math.Abs(Points[^2] - x) < 1.5 && Math.Abs(Points[^1] - y) < 1.5)
+        {
+            return;
+        }
+
+        Points.Add(x);
+        Points.Add(y);
+    }
+
+    /// <summary>Puts every point where <paramref name="from"/> has it, moved by the given amount.</summary>
+    public void PlaceFrom(PenAnnotation from, double x, double y)
+    {
+        Points = [.. from.Points.Select((value, index) => value + (index % 2 == 0 ? x : y))];
+    }
+
+    public override Annotation Copy() => new PenAnnotation { Id = Id, Points = [.. Points], Color = Color, Thickness = Thickness };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is PenAnnotation pen)
+        {
+            Color = pen.Color;
+            Thickness = pen.Thickness;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is PenAnnotation pen && Color == pen.Color && Thickness == pen.Thickness;
+}
+
+/// <summary>
+/// A lens: the pictures under its middle, drawn larger inside its frame.
+///
+/// For the detail that is the point of the screenshot and is eight pixels high in it: a version
+/// number, a status icon, one cell of a table. It magnifies in place, about its own centre, so
+/// what is in the middle of the lens is what was in the middle of that spot, and dragging it over
+/// the picture works the way a glass held over a page does.
+///
+/// Like a blur it shows pictures and not what is drawn on them, and it shows them from the
+/// pictures themselves rather than from a copy taken when it was made, so it is as sharp as the
+/// capture is and follows a picture that is moved underneath it.
+/// </summary>
+public sealed class MagnifyAnnotation : RectAnnotation
+{
+    /// <summary>How many times larger.</summary>
+    public double Zoom { get; set; } = 2;
+
+    public static readonly double[] Presets = [1.5, 2, 3, 4];
+
+    public override Annotation Copy() => new MagnifyAnnotation
+    {
+        Id = Id, X = X, Y = Y, Width = Width, Height = Height, Zoom = Zoom
+    };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is MagnifyAnnotation magnify)
+        {
+            Zoom = magnify.Zoom;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is MagnifyAnnotation magnify && Zoom == magnify.Zoom;
+}
+
+/// <summary>How a hidden region hides what is under it.</summary>
+public enum HideMode
+{
+    Blur,
+    Pixelate,
+    Solid
 }
 
 public sealed class BlurAnnotation : RectAnnotation
@@ -93,10 +299,32 @@ public sealed class BlurAnnotation : RectAnnotation
         return Math.Max(normalised * normalised * 8f, 0.1f);
     }
 
+    /// <summary>
+    /// How what is underneath is hidden.
+    ///
+    /// A gaussian blur looks best and hides least: on text set in a known typeface, a light blur
+    /// can be worked backwards, and people have had passwords read out of screenshots that way.
+    /// Squares throw the detail away instead of smearing it, and a solid bar leaves nothing at all,
+    /// which is the only honest answer for something that must not be read. Blur is first, so a
+    /// document from before there was a choice means what it always meant.
+    /// </summary>
+    public HideMode Mode { get; set; }
+
     public override Annotation Copy() => new BlurAnnotation
     {
-        Id = Id, X = X, Y = Y, Width = Width, Height = Height, Strength = Strength
+        Id = Id, X = X, Y = Y, Width = Width, Height = Height, Strength = Strength, Mode = Mode
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is BlurAnnotation blur)
+        {
+            Strength = blur.Strength;
+            Mode = blur.Mode;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is BlurAnnotation blur && Strength == blur.Strength && Mode == blur.Mode;
 }
 
 public sealed class BoxAnnotation : RectAnnotation
@@ -114,11 +342,35 @@ public sealed class BoxAnnotation : RectAnnotation
     [JsonIgnore]
     public bool HasFill => !string.IsNullOrWhiteSpace(FillColor);
 
+    /// <summary>
+    /// Round rather than square: the ellipse that fits the same rectangle.
+    ///
+    /// The same object with a different outline, for the same reason a line is an arrow. It is
+    /// dragged out, sized by the same eight grips and filled the same way, and the only thing that
+    /// differs is the path the border takes.
+    /// </summary>
+    public bool Ellipse { get; set; }
+
     public override Annotation Copy() => new BoxAnnotation
     {
         Id = Id, X = X, Y = Y, Width = Width, Height = Height,
-        BorderColor = BorderColor, BorderThickness = BorderThickness, FillColor = FillColor
+        BorderColor = BorderColor, BorderThickness = BorderThickness, FillColor = FillColor, Ellipse = Ellipse
     };
+
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is BoxAnnotation box)
+        {
+            BorderColor = box.BorderColor;
+            BorderThickness = box.BorderThickness;
+            FillColor = box.FillColor;
+            Ellipse = box.Ellipse;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is BoxAnnotation box
+        && BorderColor == box.BorderColor && BorderThickness == box.BorderThickness && FillColor == box.FillColor
+        && Ellipse == box.Ellipse;
 }
 
 public sealed class TextAnnotation : Annotation
@@ -148,11 +400,60 @@ public sealed class TextAnnotation : Annotation
     /// <summary>How far the plate extends past the words, in image pixels.</summary>
     public double BackgroundPadding { get; set; } = 6;
 
+    /// <summary>
+    /// Whether the plate has a tail, which makes the text a callout: words that say which thing
+    /// they are about.
+    ///
+    /// A setting on text rather than a tool beside it, since a callout is text in every respect
+    /// but the tail: it is typed, sized, coloured and backed the same way, and a note that turns
+    /// out to need pointing at something should not have to be typed again. The tail is drawn in
+    /// the plate's colour, so it only shows on text that has one.
+    ///
+    /// Not part of a style. Where a tail points belongs to the one text it is on, and a style
+    /// carried onto another text would bring a tail aimed at somewhere it has never been.
+    /// </summary>
+    public bool HasTail { get; set; }
+
+    /// <summary>Where the tail's tip is, in image pixels. It stays put when the text is moved, because what it points at has not moved.</summary>
+    public double TailX { get; set; }
+
+    public double TailY { get; set; }
+
+    /// <summary>Gives the text a tail pointing down and to the left of it, which is where there is most often something to point at, unless it has one already.</summary>
+    public void PointSomewhere()
+    {
+        if (!HasTail)
+        {
+            HasTail = true;
+            TailX = X - 30;
+            TailY = Y + FontSize * 1.4 + 50;
+        }
+    }
+
     public override Annotation Copy() => new TextAnnotation
     {
         Id = Id, X = X, Y = Y, Text = Text, FontFamily = FontFamily, FontSize = FontSize, Color = Color,
-        Background = Background, BackgroundPadding = BackgroundPadding
+        Background = Background, BackgroundPadding = BackgroundPadding,
+        HasTail = HasTail, TailX = TailX, TailY = TailY
     };
+
+    /// <summary>
+    /// The face is left out of it, deliberately: there is no way to choose one on the band, so a
+    /// style that set it could only ever take away a choice made somewhere else.
+    /// </summary>
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is TextAnnotation text)
+        {
+            Color = text.Color;
+            FontSize = text.FontSize;
+            Background = text.Background;
+            BackgroundPadding = text.BackgroundPadding;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is TextAnnotation text
+        && Color == text.Color && FontSize == text.FontSize && Background == text.Background;
 }
 
 /// <summary>
@@ -183,12 +484,155 @@ public sealed class StepAnnotation : Annotation
     {
         Id = Id, X = X, Y = Y, Number = Number, Diameter = Diameter, Color = Color
     };
+
+    /// <summary>The number is not part of the look. It says which step this is, which no style knows.</summary>
+    public override void AdoptStyle(Annotation style)
+    {
+        if (style is StepAnnotation step)
+        {
+            Color = step.Color;
+            Diameter = step.Diameter;
+        }
+    }
+
+    public override bool WearsStyle(Annotation style) => style is StepAnnotation step
+        && Color == step.Color && Diameter == step.Diameter;
 }
 
-public sealed class CanvasSize
+/// <summary>
+/// A picture standing on the canvas: the capture itself, or one pasted in beside it.
+///
+/// The capture is one of these rather than a backdrop drawn before everything else, so that it can
+/// be selected, moved, resized and flipped like anything pasted over it. The pixels are still never
+/// touched. What the layer holds is where the picture is placed and which way round it faces; the
+/// picture is an entry in the snapshot, named by <see cref="Source"/>, and is kept exactly as it
+/// arrived.
+///
+/// Nothing else is positioned against it. Coordinates are measured from where the capture's corner
+/// was when it was taken, and they stay measured from there when the capture is moved, so an arrow
+/// drawn on the picture stays where it was put rather than being dragged along.
+/// </summary>
+public sealed class ImageAnnotation : RectAnnotation
 {
+    /// <summary>The entry the capture is kept in, which is the one picture every snapshot has.</summary>
+    public const string Capture = "original.png";
+
+    /// <summary>The entry in the snapshot holding the picture.</summary>
+    public string Source { get; set; } = Capture;
+
+    /// <summary>Mirrored left to right.</summary>
+    public bool FlipHorizontal { get; set; }
+
+    /// <summary>Mirrored top to bottom.</summary>
+    public bool FlipVertical { get; set; }
+
+    [JsonIgnore]
+    public bool IsCapture => Source == Capture;
+
+    public override Annotation Copy() => new ImageAnnotation
+    {
+        Id = Id, X = X, Y = Y, Width = Width, Height = Height,
+        Source = Source, FlipHorizontal = FlipHorizontal, FlipVertical = FlipVertical
+    };
+
+    /// <summary>A picture has no look to take on. Where it is and which way it faces are not style.</summary>
+    public override void AdoptStyle(Annotation style)
+    {
+    }
+
+    public override bool WearsStyle(Annotation style) => false;
+}
+
+/// <summary>
+/// Which way a cut runs, which is to say what it takes out of the picture.
+///
+/// Written out by name rather than as a number, for the same reason a colour is written as hex:
+/// the document is meant to be readable and diffable, and "1" says nothing about which way a band
+/// was cut.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CutAxis>))]
+public enum CutAxis
+{
+    /// <summary>A band across the picture, taking rows out of it, so what is left is shorter.</summary>
+    Rows,
+
+    /// <summary>A band down the picture, taking columns out of it, so what is left is narrower.</summary>
+    Columns
+}
+
+/// <summary>
+/// A band cut out of the picture, in capture pixels.
+///
+/// Not a pixel edit: the capture is drawn in pieces with this band skipped and everything after it
+/// closed up. Taking the band out of the document puts the picture back exactly as it was, which is
+/// the same promise every other kind of editing here makes.
+/// </summary>
+public sealed class CutBand
+{
+    public CutAxis Axis { get; set; }
+
+    /// <summary>Where the band starts, across or down the capture depending on the axis.</summary>
+    public double At { get; set; }
+
+    /// <summary>How much it takes.</summary>
+    public double Extent { get; set; }
+
+    public CutBand Copy() => new() { Axis = Axis, At = At, Extent = Extent };
+}
+
+/// <summary>
+/// The canvas: the rectangle that actually gets exported, expressed in image pixels.
+///
+/// It is a rectangle rather than a size because it no longer has to coincide with the capture. The
+/// canvas can be pulled in to crop the picture, or pushed out past it to add space, and what it
+/// adds is transparent. <see cref="X"/> and <see cref="Y"/> say where its top-left corner sits
+/// relative to the capture's, so a canvas wider than the capture has a negative one.
+///
+/// Keeping the origin on the capture rather than on the canvas is what makes resizing cheap: every
+/// annotation is positioned against the picture it was drawn on, so moving the canvas moves nothing
+/// else. Documents written before any of this existed have no offset at all, and zero is precisely
+/// what they meant.
+/// </summary>
+public sealed class CanvasArea
+{
+    public int X { get; set; }
+    public int Y { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
+}
+
+/// <summary>
+/// A canvas somebody sized by hand, and where each picture stood when they did.
+///
+/// Its absence is the ordinary case, and means the canvas simply fits the pictures. See
+/// <see cref="CanvasFit"/> for what the two together decide.
+/// </summary>
+public sealed class ManualCanvas
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+
+    /// <summary>Each picture's rectangle at the moment the canvas was set, by the picture's id.</summary>
+    public Dictionary<string, PictureBounds> Pictures { get; set; } = [];
+
+    public ManualCanvas Copy() => new()
+    {
+        X = X, Y = Y, Width = Width, Height = Height,
+        Pictures = Pictures.ToDictionary(pair => pair.Key, pair => pair.Value.Copy())
+    };
+}
+
+/// <summary>Where a picture stood, in capture pixels.</summary>
+public sealed class PictureBounds
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+
+    public PictureBounds Copy() => new() { X = X, Y = Y, Width = Width, Height = Height };
 }
 
 /// <summary>The contents of document.json.</summary>
@@ -201,19 +645,45 @@ public sealed class SnapshotDocument
     /// order of the layers, so that a blur could never hide an arrow. Version 2 draws the layers in
     /// the order they are in, which is what makes moving an object forward or back mean anything.
     /// A version 1 document is reordered as it is opened, so it still looks exactly as it did.
+    ///
+    /// Version 4 added the bands cut out of the picture. An older document has none, which is what
+    /// it meant, so there is nothing to fix up.
+    ///
+    /// Version 5 put the capture among the layers, so that it can be moved and resized like a
+    /// picture pasted beside it. An older document is given one at the bottom of the stack, at its
+    /// own size and at the origin, which is exactly where it was always drawn.
+    ///
+    /// Version 5 also records whether the canvas was sized by hand, since a canvas left alone now
+    /// follows the pictures. An older canvas that is not exactly the capture was cropped or padded
+    /// by somebody, and is migrated as set by hand so it stays exactly as they left it.
     /// </summary>
-    public const int Current = 2;
+    public const int Current = 5;
 
     public int Version { get; set; } = Current;
 
-    public CanvasSize Canvas { get; set; } = new();
+    /// <summary>The canvas as it stands, which is what gets exported.</summary>
+    public CanvasArea Canvas { get; set; } = new();
+
+    /// <summary>The canvas as it was last sized by hand, or null when it has been left to fit the pictures.</summary>
+    public ManualCanvas? ManualCanvas { get; set; }
 
     public List<Annotation> Layers { get; set; } = [];
+
+    /// <summary>
+    /// The bands cut out of the picture, in capture pixels.
+    ///
+    /// Kept apart from the layers because a cut is not something drawn on the picture: it changes
+    /// where the picture is, which is why it belongs beside the canvas rather than among the things
+    /// standing on it.
+    /// </summary>
+    public List<CutBand> Cuts { get; set; } = [];
 
     public SnapshotDocument Copy() => new()
     {
         Version = Version,
-        Canvas = new CanvasSize { Width = Canvas.Width, Height = Canvas.Height },
-        Layers = [.. Layers.Select(layer => layer.Copy())]
+        Canvas = new CanvasArea { X = Canvas.X, Y = Canvas.Y, Width = Canvas.Width, Height = Canvas.Height },
+        ManualCanvas = ManualCanvas?.Copy(),
+        Layers = [.. Layers.Select(layer => layer.Copy())],
+        Cuts = [.. Cuts.Select(cut => cut.Copy())]
     };
 }

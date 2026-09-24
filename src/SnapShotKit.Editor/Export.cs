@@ -2,7 +2,11 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace SnapShotKit.Editor;
 
@@ -14,49 +18,150 @@ namespace SnapShotKit.Editor;
 /// </summary>
 public static class Export
 {
-    /// <summary>Renders to PNG bytes, for handing to something that is not a file.</summary>
-    public static byte[] ToPng(Snapshot snapshot, BlurCache blurs)
+    /// <summary>
+    /// Renders to PNG bytes, for handing to something that is not a file.
+    ///
+    /// Avalonia's encoder rather than the one every file goes through, because there is nothing to
+    /// ask for here: the clipboard wants a PNG with its transparency, which is what this writes,
+    /// and going the long way round would copy the buffer to gain a setting nobody is offered.
+    /// </summary>
+    /// <param name="ground">
+    /// What to flatten onto, for somewhere that has no transparency to show: a printed page is
+    /// white paper, and a picture left transparent comes out of a PDF on black as often as not.
+    /// </param>
+    public static byte[] ToPng(Snapshot snapshot, BlurCache blurs, Avalonia.Media.Color? ground = null)
     {
-        using var rendered = Render(snapshot, blurs);
+        using var rendered = Render(snapshot, blurs, ground);
         using var buffer = new MemoryStream();
 
         rendered.Save(buffer, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
         return buffer.ToArray();
     }
 
-    static RenderTargetBitmap Render(Snapshot snapshot, BlurCache blurs)
+    /// <summary>
+    /// The canvas, rendered.
+    ///
+    /// The target starts transparent and only what is drawn covers it, so a canvas pushed out past
+    /// the capture comes out with real transparency around the picture rather than a colour someone
+    /// has to guess at.
+    ///
+    /// An export that is not keeping its transparency is flattened here, by painting the ground
+    /// before anything stands on it, rather than by dropping the alpha channel afterwards. The
+    /// renderer is the one thing that knows how a half-covered pixel should meet what is under it,
+    /// and letting it answer means a soft edge over the margin lands on white the way it looks on
+    /// screen instead of being composited a second time by hand.
+    /// </summary>
+    static RenderTargetBitmap Render(Snapshot snapshot, BlurCache blurs, Avalonia.Media.Color? ground = null)
     {
         var canvas = snapshot.Document.Canvas;
-        var rendered = new RenderTargetBitmap(new PixelSize(canvas.Width, canvas.Height), new Vector(96, 96));
+
+        // The canvas with its cuts closed up, which is what the file actually comes out as: a band
+        // taken out of the middle makes the picture shorter, and the export is the picture.
+        var area = snapshot.Layout.ToLaid(new Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height));
+
+        var size = new PixelSize(
+            Math.Max((int)Math.Round(area.Width), 1),
+            Math.Max((int)Math.Round(area.Height), 1));
+
+        var rendered = new RenderTargetBitmap(size, new Vector(96, 96));
+        var bounds = new Rect(0, 0, size.Width, size.Height);
 
         using (var context = rendered.CreateDrawingContext())
         {
-            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, canvas.Width, canvas.Height));
+            if (ground is { } fill)
+            {
+                context.FillRectangle(new Avalonia.Media.SolidColorBrush(fill), bounds);
+            }
+
+            SnapshotRenderer.Draw(context, snapshot, blurs, bounds, area);
         }
 
         return rendered;
     }
 
-    public static void ToFile(Snapshot snapshot, BlurCache blurs, string path)
-    {
-        var canvas = snapshot.Document.Canvas;
-        var size = new PixelSize(canvas.Width, canvas.Height);
+    /// <summary>
+    /// Renders to a file, in whichever format the name asks for, with default settings for it.
+    ///
+    /// This is the command line's way in. The extension decides, and a name that asks for something
+    /// not on the list is refused rather than quietly written as something else: a file called
+    /// `shot.avif` holding a JPEG is worse than an error.
+    /// </summary>
+    public static void ToFile(Snapshot snapshot, BlurCache blurs, string path) =>
+        ToFile(snapshot, blurs, path, ExportSettings.ForExtension(path));
 
-        using var rendered = new RenderTargetBitmap(size, new Vector(96, 96));
+    /// <summary>
+    /// Renders to a file exactly as asked.
+    ///
+    /// The settings say the format rather than the name doing it, because by this point somebody
+    /// has chosen one in a dialog and the file was named to match. Everything goes out through
+    /// ImageSharp: Avalonia writes PNG and nothing else, and one encoder that can be told what to
+    /// do beats two that agree only by inspection.
+    /// </summary>
+    public static void ToFile(Snapshot snapshot, BlurCache blurs, string path, ExportSettings settings)
+    {
+        using var rendered = Render(snapshot, blurs, settings.Transparent ? null : Avalonia.Media.Colors.White);
+        using var image = ToImage(rendered);
+
+        switch (settings.Format)
+        {
+            case ExportFormat.Jpeg:
+                image.SaveAsJpeg(path, new JpegEncoder { Quality = settings.JpegQuality });
+                return;
+
+            case ExportFormat.Webp:
+                image.SaveAsWebp(path, new WebpEncoder
+                {
+                    FileFormat = settings.WebpLossless ? WebpFileFormatType.Lossless : WebpFileFormatType.Lossy,
+                    Quality = settings.WebpQuality,
+
+                    // Nothing to compress away when the ground was painted in, and saying so keeps
+                    // the encoder from carrying an alpha channel that is 255 everywhere.
+                    TransparentColorMode = WebpTransparentColorMode.Clear
+                });
+                return;
+
+            default:
+                image.SaveAsPng(path, new PngEncoder
+                {
+                    // Written without an alpha channel when there is no transparency to keep, which
+                    // is a quarter of the pixel data gone for a picture that looks identical.
+                    ColorType = settings.Transparent ? PngColorType.RgbWithAlpha : PngColorType.Rgb
+                });
+                return;
+        }
+    }
+
+    /// <summary>The rendered canvas as an ImageSharp image, which is what every file is written from.</summary>
+    /// <summary>
+    /// The colour of the canvas at a point, as it would come out in an export, or null where there
+    /// is nothing: outside the canvas, or on a part of it no picture covers.
+    ///
+    /// One pixel is rendered for the purpose, through the same renderer as everything else, rather
+    /// than the colour being looked up in the capture's bitmap. What somebody points at is what
+    /// they can see, which may be a pasted picture, a filled box or the blurred version of either,
+    /// and only the renderer knows what that comes to.
+    /// </summary>
+    /// <param name="image">The point, in image pixels as the document measures them.</param>
+    public static string? ColourAt(Snapshot snapshot, BlurCache blurs, Avalonia.Point image)
+    {
+        var at = snapshot.Layout.ToLaid(new Rect(Math.Floor(image.X), Math.Floor(image.Y), 1, 1));
+
+        using var rendered = new RenderTargetBitmap(new PixelSize(1, 1), new Vector(96, 96));
 
         using (var context = rendered.CreateDrawingContext())
         {
-            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, canvas.Width, canvas.Height));
+            SnapshotRenderer.Draw(context, snapshot, blurs, new Rect(0, 0, 1, 1), new Rect(at.X, at.Y, 1, 1));
         }
 
-        if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-        {
-            rendered.Save(path, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
-            return;
-        }
+        using var pixel = ToImage(rendered);
+        var colour = pixel[0, 0];
 
-        // Avalonia writes PNG only, so JPEG goes out through ImageSharp. JPEG has no alpha, which
-        // suits a screenshot: there is nothing transparent in it to lose.
+        return colour.A < 8 ? null : $"#{colour.R:X2}{colour.G:X2}{colour.B:X2}";
+    }
+
+    static Image<Bgra32> ToImage(RenderTargetBitmap rendered)
+    {
+        var size = rendered.PixelSize;
         var stride = size.Width * 4;
         var pixels = new byte[(long)stride * size.Height];
 
@@ -70,7 +175,54 @@ public static class Export
             handle.Free();
         }
 
-        using var image = Image.LoadPixelData<Bgra32>(pixels, size.Width, size.Height);
-        image.SaveAsJpeg(path);
+        Unpremultiply(pixels);
+
+        return Image.LoadPixelData<Bgra32>(pixels, size.Width, size.Height);
     }
+
+    /// <summary>
+    /// Divides the colour back out by the alpha it was multiplied by.
+    ///
+    /// What comes out of the renderer is premultiplied: a half-transparent red is stored with its
+    /// red already halved, which is the form a compositor wants because blending is then a multiply
+    /// and an add rather than a division per pixel. ImageSharp expects the other form, and reading
+    /// one as the other is silent: every fully opaque pixel is identical either way, so a picture
+    /// looks perfect and only its soft edges are wrong. An arrow crossing the transparent margin
+    /// comes out with a dark fringe along it, darkest where the edge is faintest.
+    ///
+    /// Avalonia's own PNG encoder does this on the way out, which is why exports were right until
+    /// a second encoder was given the same buffer.
+    ///
+    /// A pixel with no alpha at all keeps no colour to recover. It is written as transparent black
+    /// rather than divided by zero, which is what it already was on screen.
+    /// </summary>
+    static void Unpremultiply(byte[] pixels)
+    {
+        for (var index = 0; index < pixels.Length; index += 4)
+        {
+            var alpha = pixels[index + 3];
+
+            if (alpha == 255)
+            {
+                continue;
+            }
+
+            if (alpha == 0)
+            {
+                pixels[index] = 0;
+                pixels[index + 1] = 0;
+                pixels[index + 2] = 0;
+                continue;
+            }
+
+            // Rounded rather than truncated, and clamped: a channel can exceed its alpha by a step
+            // through the renderer's own rounding, and 256 written into a byte would wrap to 0,
+            // turning the brightest edge pixel into the darkest.
+            pixels[index] = Recover(pixels[index], alpha);
+            pixels[index + 1] = Recover(pixels[index + 1], alpha);
+            pixels[index + 2] = Recover(pixels[index + 2], alpha);
+        }
+    }
+
+    static byte Recover(byte channel, byte alpha) => (byte)Math.Min(255, (channel * 255 + alpha / 2) / alpha);
 }
