@@ -239,6 +239,18 @@ Flattening happens in the renderer, by painting the ground before anything stand
 
 Everything is written by one encoder. Avalonia writes PNG and nothing else, so the moment a second format existed there were two encoders producing files that agreed only by inspection, and they did not: the renderer hands back premultiplied pixels, which the second encoder read as straight ones. Every fully opaque pixel is identical either way, so the pictures looked perfect and only their soft edges were wrong, which is exactly the kind of fault that survives being tested. The colour is divided back out by its alpha now, on one path, and the clipboard is the single exception because it is offered no settings to get wrong.
 
+## Cropping a picture
+
+A crop belongs to a picture, not to the canvas. Pulling the canvas in cuts everything off at a line, and that is the right tool for framing an export, but it cannot trim a picture pasted over the capture without cutting whatever else crosses the same line. So each picture carries its own crop, and the crop tool works on one picture at a time: the selected one, or the capture when nothing is selected, or the only picture there is when the capture has been deleted. With several pictures and none of them selected or the capture, it asks which rather than guessing.
+
+The crop is kept in the picture's own pixels, before any flip, as `ImageAnnotation.Crop`. The layer's X, Y, Width and Height go on saying where the part on show stands, so a cropped picture is selected, moved, stretched and flipped exactly as any other, and nothing that handles pictures had to learn about crops. Kept in the picture's pixels, it survives the picture being stretched; kept before the flip, flipping turns the same part round rather than showing a different part. `PictureCrop` is the one place that converts between the two.
+
+Nothing is taken from the pixels. Picking the crop tool again shows all of the picture, with the part the crop took off dimmed, and pulling an edge back out brings it back. Only the picture's own pixels are dimmed, beneath anything standing on it, because only they are going: an arrow or another picture over the dimmed part stays exactly where it is, and dimming it too would say it was about to go.
+
+It is the same mode as resizing the canvas, with the same grips, thirds, confirm bar, size fields and keys, pointed at a different rectangle. The two differ only where they have to. A crop stops at the picture's edge, since past it there is nothing to show; the canvas goes on out and adds transparent space. The kept part stays where it was on the canvas, so nothing drawn on it moves, and the cuts stay where they were too, since nothing of the picture has gone anywhere.
+
+After a crop the canvas fits the pictures, as it does after any change to one. Cropping the capture on a snapshot with nothing else on it therefore crops the export exactly as pulling the canvas in would have, which is why the common case needs no second thought about which tool to use. With a picture hanging past the capture, cropping the capture leaves the canvas as large as that picture needs.
+
 ## Asking before exporting
 
 Export opens a dialog before the file picker, not after. The format decides the extension, and a picker told the name before anyone has said what kind of file it is can only offer to rename it afterwards; this way it arrives already filtered, already named and already pointed at a folder. The portal's own picker can carry extra controls, but they are a fixed list of combo boxes drawn in the file chooser's style, with no way to show a quality setting only when the format that has one is chosen.
