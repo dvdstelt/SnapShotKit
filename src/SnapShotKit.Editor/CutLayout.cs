@@ -3,18 +3,19 @@ using Avalonia;
 namespace SnapShotKit.Editor;
 
 /// <summary>
-/// Where the picture ends up once the bands cut out of it are closed up.
+/// Where a picture's own pixels end up once the bands cut out of it are closed up.
 ///
-/// A cut is not a pixel edit. `original.png` is never touched, so a cut is geometry like a crop is:
-/// the capture is drawn in pieces with the cut bands skipped, and everything after a cut moves up
-/// or left by what the cut took. Pulling the cut back out of the document puts the picture back
-/// exactly as it was.
+/// A cut is not a pixel edit. The picture's pixels are never touched, so a cut is geometry like a
+/// crop is: the picture is drawn in pieces with the cut bands skipped, and everything after a cut
+/// moves up or left by what the cut took. Taking the cut back off puts the picture back exactly as
+/// it was.
 ///
-/// That leaves two coordinate systems. Capture coordinates are what the document is written in and
-/// what every annotation is positioned against, and they never renumber, so a cut moves nothing
-/// that was drawn. Laid coordinates are what ends up on screen and in the export, with the cuts
-/// taken out. Everything drawn goes one way through here and everything pointed at comes back the
-/// other.
+/// One of these belongs to each picture, in that picture's own pixels, and <see cref="PictureLayout"/>
+/// is what puts the result on the canvas. The picture's own pixels never renumber, so a cut moves
+/// nothing that was measured against them; closed pixels are what is drawn.
+///
+/// It once did the same for the whole canvas, when a cut ran across everything, and still does for
+/// the one moment that happens: opening a document written before cuts belonged to pictures.
 /// </summary>
 public sealed class CutLayout
 {
@@ -58,7 +59,7 @@ public sealed class CutLayout
 
     List<(double At, double Extent)> Bands(CutAxis axis) => axis == CutAxis.Rows ? rows : columns;
 
-    /// <summary>Where a capture coordinate ends up once the cuts before it are closed. Inside a cut it lands on the join.</summary>
+    /// <summary>Where an uncut coordinate ends up once the cuts before it are closed. Inside a cut it lands on the join.</summary>
     public double ToLaid(double value, CutAxis axis)
     {
         var removed = 0.0;
@@ -76,7 +77,7 @@ public sealed class CutLayout
         return value - removed;
     }
 
-    /// <summary>The capture coordinate a laid one came from. On a join it is the first row or column after the cut.</summary>
+    /// <summary>The uncut coordinate a closed one came from. On a join it is the first row or column after the cut.</summary>
     public double ToCapture(double value, CutAxis axis)
     {
         foreach (var (at, extent) in Bands(axis))
@@ -106,12 +107,11 @@ public sealed class CutLayout
         new(from, new Size(Math.Max(to.X - from.X, 0), Math.Max(to.Y - from.Y, 0)));
 
     /// <summary>
-    /// The stretch of capture a region of the picture is drawn from, in pieces, with how far each
+    /// The stretch of the uncut picture a region of it is drawn from, in pieces, with how far each
     /// piece moves when the cuts are closed.
     ///
-    /// Drawing a piece at a time is what makes a cut cost nothing anywhere else: each piece is the
-    /// whole picture drawn shifted and clipped to its own band, so an annotation that happens to
-    /// straddle a cut comes out as its two halves in the right places without knowing a cut exists.
+    /// Each piece is drawn on its own, shifted by what the cuts before it took, which is all that
+    /// closing a cut up amounts to.
     /// </summary>
     public IEnumerable<(Rect Piece, Vector Shift)> Pieces(Rect region)
     {
@@ -158,13 +158,4 @@ public sealed class CutLayout
             yield return (at, to);
         }
     }
-
-    /// <summary>
-    /// How much capture it takes to come out a given size.
-    ///
-    /// For the times a size is typed rather than dragged: the number in the field is what the file
-    /// will be, and what the canvas has to cover to produce it is this.
-    /// </summary>
-    public double Widen(double from, double laidExtent, CutAxis axis) =>
-        ToCapture(ToLaid(from, axis) + laidExtent, axis) - from;
 }

@@ -100,16 +100,18 @@ public sealed class ToolBand : Border
     readonly Control canvasWidthGroup;
     readonly Control canvasHeightGroup;
     readonly Control canvasFitGroup;
+    readonly Control cropWholeGroup;
     readonly Control pictureGroup;
+    readonly Control pictureUncut;
 
     readonly TextBlock zoomLabel = Labels.Body("100%", 12.5, Tokens.Neutral800Brush);
 
     readonly TextBlock canvasSizeLabel = Labels.Body(string.Empty, 12.5, Tokens.Neutral800Brush);
     readonly TextBlock canvasFixedLabel = Labels.Body("fixed", 10.5, Tokens.Neutral500Brush);
-    readonly Control canvasIcon = Lucide.Icon(Lucide.Crop, 14, Tokens.Neutral800Brush);
+    readonly Control canvasIcon = Lucide.Icon(Lucide.Frame, 14, Tokens.Neutral800Brush);
     readonly Border canvasReadout;
 
-    const string CanvasTip = "Resize canvas  (C)\nDrag an edge in to crop, or out to add transparent space.\nEnter applies, Escape backs out.";
+    const string CanvasTip = "Resize canvas  (C)\nDrag an edge in to cut everything off at that line, or out to add transparent space.\nTo trim a picture, crop it instead  (R).\nEnter applies, Escape backs out.";
 
     public ToolBand()
     {
@@ -206,6 +208,9 @@ public sealed class ToolBand : Border
         canvasWidthGroup = Group("Width", widthBox);
         canvasHeightGroup = Group("Height", heightBox);
         canvasFitGroup = Group("Canvas", TextAction("Fit to pictures", () => CanvasFitRequested?.Invoke()));
+        cropWholeGroup = Group("Crop", TextAction("Whole picture", () => WholePictureRequested?.Invoke()));
+
+        pictureUncut = TextAction("Put cuts back", () => PictureUncutRequested?.Invoke());
 
         pictureGroup = Group("Picture", new StackPanel
         {
@@ -213,9 +218,11 @@ public sealed class ToolBand : Border
             HorizontalAlignment = HorizontalAlignment.Left,
             Children =
             {
+                TextAction("Crop", () => PictureCropRequested?.Invoke()),
                 TextAction("Flip horizontally", () => PictureFlipRequested?.Invoke(true)),
                 TextAction("Flip vertically", () => PictureFlipRequested?.Invoke(false)),
-                TextAction("Actual size", () => PictureSizeRestoreRequested?.Invoke())
+                TextAction("Actual size", () => PictureSizeRestoreRequested?.Invoke()),
+                pictureUncut
             }
         });
 
@@ -227,7 +234,7 @@ public sealed class ToolBand : Border
                  {
                      colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
                      headGroup, shapeGroup, hideGroup, dimGroup, zoomGroup, tailGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
-                     cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, pictureGroup
+                     cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, cropWholeGroup, pictureGroup
                  })
         {
             settings.Children.Add(group);
@@ -342,6 +349,15 @@ public sealed class ToolBand : Border
     public event Action<bool>? PictureFlipRequested;
 
     public event Action? PictureSizeRestoreRequested;
+
+    /// <summary>Put back every band cut out of the selected picture.</summary>
+    public event Action? PictureUncutRequested;
+
+    /// <summary>Crop the selected picture.</summary>
+    public event Action? PictureCropRequested;
+
+    /// <summary>Show all of the picture being cropped, which is how a crop is taken off again.</summary>
+    public event Action? WholePictureRequested;
     public event Action? UndoRequested;
     public event Action? RedoRequested;
 
@@ -362,7 +378,8 @@ public sealed class ToolBand : Border
                      (EditorTool.Spotlight, Lucide.Spotlight, "Spotlight", "Spotlight  (O)\nDims everything except the regions dragged out."),
                      (EditorTool.Step, Lucide.Step, "Marker", "Numbered marker  (N)\nEach one takes the next number up."),
                      (EditorTool.Text, Lucide.Text, "Text", "Text  (T)\nType in place. Shift+Enter for a new line, Enter to finish."),
-                     (EditorTool.Cut, Lucide.Cut, "Cut", "Cut out  (X)\nDrag down the picture to take a band of rows out of it, or across to take columns.\nWhat is left closes up.")
+                     (EditorTool.Cut, Lucide.Cut, "Cut", "Cut out  (X)\nDrag down the picture to take a band of rows out of it, or across to take columns.\nWhat is left closes up."),
+                     (EditorTool.Crop, Lucide.Crop, "Crop", "Crop  (R)\nDrag an edge of the selected picture in to trim it, or of the capture when nothing is selected.\nDrag inside to move the crop along the picture. Enter applies, Escape backs out.")
                  })
         {
             var icon = Lucide.Icon(glyph, 19, Tokens.Neutral800Brush);
@@ -754,10 +771,13 @@ public sealed class ToolBand : Border
             _ => 0
         });
 
-        canvasWidthGroup.IsVisible = kind is EditorTool.Canvas;
-        canvasHeightGroup.IsVisible = kind is EditorTool.Canvas;
+        // A crop is given an exact size the same way the canvas is.
+        canvasWidthGroup.IsVisible = kind is EditorTool.Canvas or EditorTool.Crop;
+        canvasHeightGroup.IsVisible = kind is EditorTool.Canvas or EditorTool.Crop;
         canvasFitGroup.IsVisible = kind is EditorTool.Canvas;
+        cropWholeGroup.IsVisible = kind is EditorTool.Crop;
         pictureGroup.IsVisible = selected is ImageAnnotation;
+        pictureUncut.IsVisible = selected is ImageAnnotation { Cuts.Count: > 0 };
 
         // A fill colour only means anything when there is a fill to colour.
         var filled = selected is BoxAnnotation box ? box.HasFill : defaults.BoxFilled;
