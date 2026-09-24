@@ -531,7 +531,7 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Fit canvas to pictures", null, FitCanvasToPictures),
             MenuEntry.Separator,
             MenuEntry.Item("Cut out a band", "X", () => SetTool(EditorTool.Cut)),
-            MenuEntry.Item("Put every cut back", null, () => canvas?.UncutAll()),
+            MenuEntry.Item("Put every cut back", null, () => canvas?.Uncut(everywhere: true)),
             MenuEntry.Separator,
             MenuEntry.Item("Bring to front", "Ctrl+Shift+]", () => Arrange(Order.Front)),
             MenuEntry.Item("Bring forward", "Ctrl+]", () => Arrange(Order.Forward)),
@@ -841,6 +841,7 @@ public sealed class EditorWindow : Window
 
         band.PictureFlipRequested += horizontally => canvas?.Flip(horizontally);
         band.PictureCropRequested += () => SetTool(EditorTool.Crop);
+        band.PictureUncutRequested += () => canvas?.Uncut(everywhere: false);
         band.WholePictureRequested += () => canvas?.ProposeWholePicture();
         band.PictureSizeRestoreRequested += () => canvas?.RestorePictureSize();
 
@@ -1281,14 +1282,12 @@ public sealed class EditorWindow : Window
         snapshot.Document.Layers.Clear();
         snapshot.Document.Layers.AddRange(previous.Layers);
 
-        // The canvas and the cuts are part of the document too. Restoring only the layers would
-        // undo a crop by leaving the crop in place, and a cut by leaving the band cut out. Whether
-        // the canvas was sized by hand goes with it, or undoing a resize would leave the canvas
-        // refusing to follow the pictures for a size nobody had set any more.
+        // The canvas is part of the document too. Restoring only the layers would undo a resize
+        // by leaving the canvas where it was put. Whether it was sized by hand goes with it, or
+        // undoing a resize would leave the canvas refusing to follow the pictures for a size
+        // nobody had set any more. Crops and cuts are on the pictures, so they came back with them.
         snapshot.Document.Canvas = previous.Canvas;
         snapshot.Document.ManualCanvas = previous.ManualCanvas;
-        snapshot.Document.Cuts = previous.Cuts;
-        snapshot.Recut();
 
         lastBandEdit = null;
         dirty = true;
@@ -2001,8 +2000,8 @@ public sealed class EditorWindow : Window
         // fields follow a crop too, since they are how a crop is given an exact size; the readout
         // at the foot stays on the canvas, which a crop has not changed yet.
         var size = canvas.ShownCanvas;
-        band.ShowCanvasSize((int)canvas.ProposalLaid.Width, (int)canvas.ProposalLaid.Height);
-        band.ShowCanvas((int)canvas.ShownCanvasLaid.Width, (int)canvas.ShownCanvasLaid.Height,
+        band.ShowCanvasSize((int)canvas.Proposal.Width, (int)canvas.Proposal.Height);
+        band.ShowCanvas((int)canvas.ShownCanvas.Width, (int)canvas.ShownCanvas.Height,
             snapshot.Document.ManualCanvas is not null, canvas.IsResizingCanvas);
 
         var selection = canvas.Selected switch
@@ -2024,18 +2023,18 @@ public sealed class EditorWindow : Window
             _ => "nothing selected"
         };
 
-        // What the file would come out as, which is the canvas with its cuts closed up. The
-        // capture's own size is worth saying only once the canvas has stopped fitting the
-        // pictures, which is exactly when "1920 × 1080" on its own would be ambiguous.
-        var laid = snapshot.Layout.ToLaid(size);
+        // What the file would come out as, which is the canvas. The capture's own size is worth
+        // saying only once the canvas has stopped fitting the pictures, which is exactly when
+        // "1920 × 1080" on its own would be ambiguous.
+        var laid = size;
 
-        var dimensions = laid == snapshot.Layout.ToLaid(canvas.PicturesRect())
+        var dimensions = laid == canvas.PicturesRect()
             ? $"{laid.Width} × {laid.Height}"
             : snapshot.Bitmap is { PixelSize: var capture }
                 ? $"{laid.Width} × {laid.Height} canvas on a {capture.Width} × {capture.Height} capture"
                 : $"{laid.Width} × {laid.Height} canvas";
 
-        var cuts = snapshot.Document.Cuts.Count switch
+        var cuts = canvas.CutCount switch
         {
             0 => string.Empty,
             1 => "   ·   1 cut",

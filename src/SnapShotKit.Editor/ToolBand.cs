@@ -102,6 +102,7 @@ public sealed class ToolBand : Border
     readonly Control canvasFitGroup;
     readonly Control cropWholeGroup;
     readonly Control pictureGroup;
+    readonly Control pictureUncut;
 
     readonly TextBlock zoomLabel = Labels.Body("100%", 12.5, Tokens.Neutral800Brush);
 
@@ -209,6 +210,8 @@ public sealed class ToolBand : Border
         canvasFitGroup = Group("Canvas", TextAction("Fit to pictures", () => CanvasFitRequested?.Invoke()));
         cropWholeGroup = Group("Crop", TextAction("Whole picture", () => WholePictureRequested?.Invoke()));
 
+        pictureUncut = TextAction("Put cuts back", () => PictureUncutRequested?.Invoke());
+
         pictureGroup = Group("Picture", new StackPanel
         {
             Spacing = Tokens.Space.S1,
@@ -218,7 +221,8 @@ public sealed class ToolBand : Border
                 TextAction("Crop", () => PictureCropRequested?.Invoke()),
                 TextAction("Flip horizontally", () => PictureFlipRequested?.Invoke(true)),
                 TextAction("Flip vertically", () => PictureFlipRequested?.Invoke(false)),
-                TextAction("Actual size", () => PictureSizeRestoreRequested?.Invoke())
+                TextAction("Actual size", () => PictureSizeRestoreRequested?.Invoke()),
+                pictureUncut
             }
         });
 
@@ -345,6 +349,9 @@ public sealed class ToolBand : Border
     public event Action<bool>? PictureFlipRequested;
 
     public event Action? PictureSizeRestoreRequested;
+
+    /// <summary>Put back every band cut out of the selected picture.</summary>
+    public event Action? PictureUncutRequested;
 
     /// <summary>Crop the selected picture.</summary>
     public event Action? PictureCropRequested;
@@ -770,6 +777,7 @@ public sealed class ToolBand : Border
         canvasFitGroup.IsVisible = kind is EditorTool.Canvas;
         cropWholeGroup.IsVisible = kind is EditorTool.Crop;
         pictureGroup.IsVisible = selected is ImageAnnotation;
+        pictureUncut.IsVisible = selected is ImageAnnotation { Cuts.Count: > 0 };
 
         // A fill colour only means anything when there is a fill to colour.
         var filled = selected is BoxAnnotation box ? box.HasFill : defaults.BoxFilled;

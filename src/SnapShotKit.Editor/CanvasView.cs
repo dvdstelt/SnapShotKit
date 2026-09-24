@@ -319,11 +319,14 @@ public sealed class CanvasView : Decorator
     /// <summary>The resize or crop being negotiated, or null when neither tool is in hand.</summary>
     CanvasResize? resizing;
 
-    /// <summary>The band being dragged out, in capture pixels, or null when nothing is being cut.</summary>
+    /// <summary>The band being dragged out, in image pixels on the canvas, or null when nothing is being cut.</summary>
     CutBand? cutting;
 
-    /// <summary>Where the cut began, in capture pixels.</summary>
+    /// <summary>Where the cut began, in image pixels.</summary>
     Point cutFrom;
+
+    /// <summary>The picture the band is being cut out of, by its id.</summary>
+    string? cutPicture;
 
     bool cuttingDrag;
 
@@ -660,13 +663,10 @@ public sealed class CanvasView : Decorator
     Rect Target() => new(0, 0, Bounds.Width, Bounds.Height);
 
     /// <summary>
-    /// The stretch the control is showing, in laid-out pixels: the working surface while the canvas
-    /// is being resized, and the canvas itself otherwise.
-    ///
-    /// Laid, because that is what is on screen. The document is written in capture pixels and knows
-    /// nothing about how tall the picture ends up once its cuts are closed.
+    /// The stretch the control is showing, in image pixels: the working surface while the canvas
+    /// is being resized or a picture cropped, and the canvas itself otherwise.
     /// </summary>
-    Rect Area() => snapshot.Layout.ToLaid(resizing?.Frame ?? CanvasRect());
+    Rect Area() => resizing?.Frame ?? CanvasRect();
 
     double Scale => Shown().Width <= 0 ? 1 : Bounds.Width / Shown().Width;
 
@@ -720,18 +720,15 @@ public sealed class CanvasView : Decorator
         var origin = Origin();
         var scale = Scale;
 
-        return snapshot.Layout.ToCapture(new Point((view.X - origin.X) / scale, (view.Y - origin.Y) / scale));
+        return new Point((view.X - origin.X) / scale, (view.Y - origin.Y) / scale);
     }
 
-    Point ToView(double x, double y) => FromLaid(snapshot.Layout.ToLaid(new Point(x, y)));
-
-    /// <summary>Where a laid-out point lands on the control, for the few things that are laid already.</summary>
-    Point FromLaid(Point laid)
+    Point ToView(double x, double y)
     {
         var origin = Origin();
         var scale = Scale;
 
-        return new Point(origin.X + laid.X * scale, origin.Y + laid.Y * scale);
+        return new Point(origin.X + x * scale, origin.Y + y * scale);
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -789,12 +786,20 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        // The cut tool marks a band of the picture rather than putting anything on it.
+        // The cut tool marks a band of a picture rather than putting anything on it: the picture
+        // the press lands on, which is the one being looked at. A press on no picture at all has
+        // nothing to cut.
         if (Tool == EditorTool.Cut)
         {
             Select(null);
 
+            if (PictureAt(image) is not { } picture)
+            {
+                return;
+            }
+
             cutFrom = image;
+            cutPicture = picture.Id;
             cutting = null;
             cuttingDrag = true;
 
@@ -998,7 +1003,6 @@ public sealed class CanvasView : Decorator
             // Shift lets a corner stretch a picture out of shape, which is the rarer thing to want.
             case ImageAnnotation picture when dragBaseline is ImageAnnotation baseline:
                 Apply(picture, baseline, delta, image, proportional: !e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-                FollowWithCuts(BoundsOf(baseline), BoundsOf(picture));
                 Refit();
                 break;
 
@@ -1198,7 +1202,7 @@ public sealed class CanvasView : Decorator
     /// thirty times a second, and thirty undo steps to take back one movement would make undo
     /// useless for whatever was done before it. A pause, or a different selection, starts a new one.
     ///
-    /// A picture takes its cuts and the canvas along, exactly as it does when dragged.
+    /// A picture takes the canvas along, exactly as it does when dragged.
     /// </summary>
     public void Nudge(double x, double y)
     {
@@ -1227,10 +1231,8 @@ public sealed class CanvasView : Decorator
                 break;
 
             case ImageAnnotation picture:
-                var then = BoundsOf(picture);
                 picture.X += x;
                 picture.Y += y;
-                FollowWithCuts(then, BoundsOf(picture), CutFollow.Remember(snapshot.Document));
                 Refit();
                 break;
 
@@ -1281,33 +1283,10 @@ public sealed class CanvasView : Decorator
         }
 
         fitting = true;
-        cutsFrom = CutFollow.Remember(snapshot.Document);
         fitFrom = CanvasRect();
         sessionScale = EffectiveScale;
 
         CanvasResizeStarted?.Invoke();
-    }
-
-    /// <summary>The cuts as they were when the picture drag began, which is what they are placed from for as long as it lasts.</summary>
-    List<CutBand>? cutsFrom;
-
-    /// <summary>
-    /// Takes the cuts across a picture along with it, from <paramref name="then"/> to
-    /// <paramref name="now"/>. See <see cref="CutFollow"/> for why a cut follows when nothing else does.
-    /// </summary>
-    void FollowWithCuts(Rect then, Rect now, List<CutBand>? from = null, bool mirrorColumns = false, bool mirrorRows = false)
-    {
-        from ??= cutsFrom;
-
-        if (from is null || !CutFollow.Apply(snapshot.Document, from, then, now, mirrorColumns, mirrorRows))
-        {
-            return;
-        }
-
-        // A stretched band closes up by a different amount, so the picture as laid out is a
-        // different size and the control is too.
-        snapshot.Recut();
-        InvalidateMeasure();
     }
 
     /// <summary>Puts the canvas wherever the pictures and any size set by hand now say it belongs.</summary>
@@ -1324,7 +1303,7 @@ public sealed class CanvasView : Decorator
         {
             // How far the canvas's corner has moved on screen, which is how far the window has to
             // move the control to leave the picture where it was.
-            var shift = snapshot.Layout.ToLaid(fitted).TopLeft - snapshot.Layout.ToLaid(fitFrom).TopLeft;
+            var shift = fitted.TopLeft - fitFrom.TopLeft;
             CanvasResizeMoved?.Invoke(shift * EffectiveScale);
         }
 
@@ -1441,10 +1420,6 @@ public sealed class CanvasView : Decorator
             {
                 picture.FlipVertical = !picture.FlipVertical;
             }
-
-            // What was cut out of it is on the other side now, and so is the band.
-            var bounds = BoundsOf(picture);
-            FollowWithCuts(bounds, bounds, CutFollow.Remember(snapshot.Document), mirrorColumns: horizontally, mirrorRows: !horizontally);
         });
     }
 
@@ -1462,7 +1437,7 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        var own = PictureCrop.Source(picture, bitmap.PixelSize);
+        var own = new PictureLayout(picture, bitmap.PixelSize).Own;
         var width = Math.Max(Math.Round(own.Width), 1);
         var height = Math.Max(Math.Round(own.Height), 1);
 
@@ -1473,12 +1448,8 @@ public sealed class CanvasView : Decorator
 
         BeforeChange?.Invoke();
 
-        var then = BoundsOf(picture);
-        var cuts = CutFollow.Remember(snapshot.Document);
-
         picture.Width = width;
         picture.Height = height;
-        FollowWithCuts(then, BoundsOf(picture), cuts);
         Refit();
 
         Changed?.Invoke();
@@ -1501,7 +1472,6 @@ public sealed class CanvasView : Decorator
         }
 
         fitting = false;
-        cutsFrom = null;
         sessionScale = 0;
 
         CanvasResizeEnded?.Invoke();
@@ -1591,8 +1561,8 @@ public sealed class CanvasView : Decorator
     /// <summary>The canvas as it is being shown: the proposal while one is on the table, the document's own otherwise.</summary>
     public Rect ShownCanvas => resizing is { Picture: null } session ? session.Proposed : CanvasRect();
 
-    /// <summary>What is being proposed, as the file would come out: the canvas, or the part of the picture being kept.</summary>
-    public Rect ProposalLaid => snapshot.Layout.ToLaid(resizing?.Proposed ?? CanvasRect());
+    /// <summary>What is being proposed: the canvas, or the part of the picture being kept.</summary>
+    public Rect Proposal => resizing?.Proposed ?? CanvasRect();
 
     ImageAnnotation? PictureById(string id) => snapshot.Document.Layers
         .OfType<ImageAnnotation>()
@@ -1679,7 +1649,7 @@ public sealed class CanvasView : Decorator
             }
 
             session.Proposed = BoundsOf(picture);
-            session.Whole = PictureCrop.Whole(picture, bitmap.PixelSize);
+            session.Whole = new PictureLayout(picture, bitmap.PixelSize).Whole;
 
             // Everything the pictures cover and all of this one, so the part the crop has taken off
             // is on show to be brought back. Fixed for as long as the crop lasts: the crop can only
@@ -1782,9 +1752,8 @@ public sealed class CanvasView : Decorator
     /// <summary>
     /// Crops the picture to the proposal as one undoable step, and leaves the mode.
     ///
-    /// The part kept stays exactly where it was on the canvas, and nothing drawn on it moves. The
-    /// cuts do not follow either, unlike when the picture is moved or stretched: nothing of the
-    /// picture has gone anywhere, it has only stopped being shown past the new edges. The canvas
+    /// The part kept stays exactly where it was on the canvas, and nothing drawn on it moves: nothing
+    /// of the picture has gone anywhere, it has only stopped being shown past the new edges. The canvas
     /// then fits the pictures as it does after any change to one, so cropping the capture on its
     /// own crops what gets exported, exactly as pulling the canvas in would have.
     /// </summary>
@@ -1798,7 +1767,7 @@ public sealed class CanvasView : Decorator
         if (changed)
         {
             BeforeChange?.Invoke();
-            PictureCrop.Show(picture!, snapshot.BitmapOf(picture!.Source)!.PixelSize, session.Proposed);
+            PictureLayout.Crop(picture!, snapshot.BitmapOf(picture!.Source)!.PixelSize, session.Proposed);
         }
 
         CloseResize();
@@ -1858,10 +1827,6 @@ public sealed class CanvasView : Decorator
 
     /// <summary>
     /// Proposes a width, a height, or both, keeping the canvas's top-left corner where it is.
-    ///
-    /// The numbers are what the file will come out as, which with a band cut out of the picture is
-    /// not the same as how much capture the canvas covers. The field says the honest thing and the
-    /// canvas is widened to produce it.
     /// </summary>
     public void ProposeCanvasSize(int? width, int? height)
     {
@@ -1870,24 +1835,15 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        var laid = snapshot.Layout.ToLaid(session.Proposed);
-
-        var wanted = new Size(
-            Math.Max(width ?? laid.Width, MinimumCanvas),
-            Math.Max(height ?? laid.Height, MinimumCanvas));
-
         var proposed = new Rect(
             session.Proposed.X,
             session.Proposed.Y,
-            snapshot.Layout.Widen(session.Proposed.X, wanted.Width, CutAxis.Columns),
-            snapshot.Layout.Widen(session.Proposed.Y, wanted.Height, CutAxis.Rows));
+            Math.Max(width ?? session.Proposed.Width, MinimumCanvas),
+            Math.Max(height ?? session.Proposed.Height, MinimumCanvas));
 
         // A crop cannot show more of the picture than there is.
         Propose(session.Picture is null ? proposed : proposed.Intersect(session.Whole));
     }
-
-    /// <summary>The canvas being shown, as the file would come out: the cuts closed up.</summary>
-    public Rect ShownCanvasLaid => snapshot.Layout.ToLaid(ShownCanvas);
 
     void Propose(Rect proposed, bool fits = false)
     {
@@ -2058,12 +2014,20 @@ public sealed class CanvasView : Decorator
 
     // ---- Cutting a band out --------------------------------------------------------------------
     //
-    // A band is marked by dragging across the picture, and the way the pointer goes decides what it
-    // takes: down or up marks rows, left or right marks columns. Nothing is taken from the capture
-    // itself, which is never touched; the band goes into the document and the picture is drawn from
-    // then on with that band skipped and everything after it closed up.
+    // A band is marked by dragging across a picture, and the way the pointer goes decides what it
+    // takes: down or up marks rows, left or right marks columns. It is cut out of that picture and
+    // no other. Nothing is taken from the pixels, which are never touched; the band goes onto the
+    // picture, which is drawn from then on with that band skipped and the rest closed up.
 
-    /// <summary>Anything thinner than this in capture pixels is a click that wandered, not a band.</summary>
+    /// <summary>The topmost picture under a point, whichever tool is in hand.</summary>
+    ImageAnnotation? PictureAt(Point image) => snapshot.Document.Layers
+        .OfType<ImageAnnotation>()
+        .LastOrDefault(picture => snapshot.BitmapOf(picture.Source) is not null && BoundsOf(picture).Contains(image));
+
+    /// <summary>The picture a band is being cut out of, as the document has it now.</summary>
+    ImageAnnotation? CutPicture() => cutPicture is { } id ? PictureById(id) : null;
+
+    /// <summary>Anything thinner than this in image pixels is a click that wandered, not a band.</summary>
     const double MinimumCut = 3;
 
     /// <summary>
@@ -2084,9 +2048,8 @@ public sealed class CanvasView : Decorator
         //
         // A fractional band would be paid for everywhere afterwards. The picture past the join is
         // drawn shifted by what the band took, and shifted by a fraction it lands between pixels
-        // and is resampled, which on a screenshot means soft text below every cut. The export would
-        // round the height it allocates while drawing an area that was never rounded, and the size
-        // fields would keep handing back a number one short of the one typed into them.
+        // and is resampled, which on a screenshot means soft text below every cut, and the picture
+        // itself would end up a fraction of a pixel short.
         var from = new Point(Math.Round(cutFrom.X), Math.Round(cutFrom.Y));
         var at = new Point(Math.Round(to.X), Math.Round(to.Y));
 
@@ -2101,9 +2064,22 @@ public sealed class CanvasView : Decorator
             _ => down >= across ? CutAxis.Rows : CutAxis.Columns
         };
 
-        cutting = axis == CutAxis.Rows
+        var band = axis == CutAxis.Rows
             ? new CutBand { Axis = CutAxis.Rows, At = Math.Min(from.Y, at.Y), Extent = down }
             : new CutBand { Axis = CutAxis.Columns, At = Math.Min(from.X, at.X), Extent = across };
+
+        // Held inside the picture, since past its edge there is nothing of it to take.
+        if (CutPicture() is { } picture)
+        {
+            var bounds = BoundsOf(picture);
+            var (low, high) = axis == CutAxis.Rows ? (bounds.Top, bounds.Bottom) : (bounds.Left, bounds.Right);
+            var start = Math.Clamp(band.At, low, high);
+
+            band.Extent = Math.Clamp(band.At + band.Extent, low, high) - start;
+            band.At = start;
+        }
+
+        cutting = band;
 
         InvalidateVisual();
     }
@@ -2126,17 +2102,26 @@ public sealed class CanvasView : Decorator
 
         cuttingDrag = false;
 
-        if (cutting is { Extent: >= MinimumCut } band)
+        if (cutting is { Extent: >= MinimumCut } band
+            && CutPicture() is { } picture
+            && snapshot.BitmapOf(picture.Source) is { } bitmap)
         {
             BeforeChange?.Invoke();
 
-            snapshot.Document.Cuts.Add(band);
-            snapshot.Recut();
-
-            Changed?.Invoke();
+            if (PictureLayout.Cut(picture, bitmap.PixelSize, band.Axis, band.At, band.At + band.Extent) is { } before)
+            {
+                new PictureLayout(picture, bitmap.PixelSize).Carry(before, snapshot.Document.Layers);
+                Refit();
+                Changed?.Invoke();
+            }
+            else
+            {
+                Abandoned?.Invoke();
+            }
         }
 
         cutting = null;
+        cutPicture = null;
 
         // The picture is a different size now, so the control is too.
         InvalidateMeasure();
@@ -2156,23 +2141,47 @@ public sealed class CanvasView : Decorator
 
         cuttingDrag = false;
         cutting = null;
+        cutPicture = null;
 
         InvalidateVisual();
     }
 
-    /// <summary>Puts every cut back, as one undoable step. The capture was never touched, so there is nothing to restore.</summary>
-    public void UncutAll()
+    /// <summary>How many bands have been cut out of the pictures, all told.</summary>
+    public int CutCount => snapshot.Document.Layers.OfType<ImageAnnotation>().Sum(picture => picture.Cuts?.Count ?? 0);
+
+    /// <summary>
+    /// Puts every cut back, in the selected picture or in all of them, as one undoable step. The
+    /// pixels were never touched, so there is nothing to restore but the room they take, and what
+    /// stands on the picture goes back down with the part it was drawn on.
+    /// </summary>
+    public void Uncut(bool everywhere)
     {
-        if (snapshot.Document.Cuts.Count == 0)
+        IEnumerable<ImageAnnotation> chosen = everywhere ? snapshot.Document.Layers.OfType<ImageAnnotation>()
+            : Selected is ImageAnnotation one ? [one]
+            : [];
+
+        var pictures = chosen
+            .Where(picture => picture.Cuts is { Count: > 0 } && snapshot.BitmapOf(picture.Source) is not null)
+            .ToList();
+
+        if (pictures.Count == 0)
         {
             return;
         }
 
         BeforeChange?.Invoke();
 
-        snapshot.Document.Cuts.Clear();
-        snapshot.Recut();
+        foreach (var picture in pictures)
+        {
+            var size = snapshot.BitmapOf(picture.Source)!.PixelSize;
 
+            if (PictureLayout.Uncut(picture, size) is { } before)
+            {
+                new PictureLayout(picture, size).Carry(before, snapshot.Document.Layers);
+            }
+        }
+
+        Refit();
         Changed?.Invoke();
 
         InvalidateMeasure();
@@ -2194,16 +2203,17 @@ public sealed class CanvasView : Decorator
             return;
         }
 
-        var start = ToView(band.At, band.At);
-        var end = ToView(band.At + band.Extent, band.At + band.Extent);
+        // Across the picture being cut and no further, since nothing else loses anything. The
+        // renderer has already dimmed it, under whatever stands on the picture: this is the part
+        // that will not be there, shown while there is still time to change it. What is left here
+        // is the outline, so the band can be found on a picture that is dark already.
+        if (CutPicture() is not { } picture)
+        {
+            return;
+        }
 
-        var marked = band.Axis == CutAxis.Rows
-            ? new Rect(target.X, start.Y, target.Width, Math.Max(end.Y - start.Y, 0))
-            : new Rect(start.X, target.Y, Math.Max(end.X - start.X, 0), target.Height);
+        var marked = ViewRect(BandRect(band, BoundsOf(picture)));
 
-        // Dimmed, the same way the surround is while the canvas is being resized: this is the part
-        // that will not be there, shown while there is still time to change it.
-        context.FillRectangle(Scrim, marked);
         context.DrawRectangle(null, BoundaryShadow, marked.Inflate(1));
         context.DrawRectangle(null, BoundaryPen, marked);
     }
@@ -2682,8 +2692,7 @@ public sealed class CanvasView : Decorator
         // rather than drawn.
         context.FillRectangle(Chequerboard, ViewRect(shown));
 
-        SnapshotRenderer.Draw(context, snapshot, blurs, target, Area(), editing,
-            resizing is { } framing && Cropped() is { } cropped ? (cropped, framing.Proposed) : null);
+        SnapshotRenderer.Draw(context, snapshot, blurs, target, Area(), editing, Dimmed());
 
         if (resizing is { } session)
         {
@@ -2755,6 +2764,17 @@ public sealed class CanvasView : Decorator
             DrawHandle(context, point);
         }
     }
+
+    /// <summary>The part of a picture about to be cropped or cut away, which the renderer dims.</summary>
+    Dimming? Dimmed() =>
+        resizing is { } framing && Cropped() is { } cropped ? new Dimming(cropped, framing.Proposed, Crop: true)
+        : cutting is { Extent: > 0 } band && CutPicture() is { } picture ? new Dimming(picture, BandRect(band, BoundsOf(picture)), Crop: false)
+        : null;
+
+    /// <summary>A band as the rectangle it takes out of a picture standing at <paramref name="bounds"/>.</summary>
+    static Rect BandRect(CutBand band, Rect bounds) => band.Axis == CutAxis.Rows
+        ? new Rect(bounds.X, band.At, bounds.Width, band.Extent)
+        : new Rect(band.At, bounds.Y, band.Extent, bounds.Height);
 
     /// <summary>A rectangle pushed in far enough from the edges of another to be drawn on whole.</summary>
     static Rect Inside(Rect rect, Rect within, double reach)

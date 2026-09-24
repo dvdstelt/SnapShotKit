@@ -141,20 +141,6 @@ public sealed class Snapshot : IDisposable
         return null;
     }
 
-    /// <summary>
-    /// Where the picture ends up once its cuts are closed up.
-    ///
-    /// Worked out from the document and kept until the cuts change, because it is asked for on
-    /// every repaint and every pointer movement, and walking the bands to build it each time would
-    /// be work done thousands of times for an answer that changes when somebody makes a cut.
-    /// </summary>
-    public CutLayout Layout => layout ??= new CutLayout(Document.Cuts);
-
-    CutLayout? layout;
-
-    /// <summary>Called when the cuts have changed, so the layout is worked out again.</summary>
-    public void Recut() => layout = null;
-
     /// <summary>The decoded picture kept under <paramref name="source"/>, or null when there is none to draw.</summary>
     public Bitmap? BitmapOf(string source) => pictures.GetValueOrDefault(source)?.Bitmap;
 
@@ -229,7 +215,84 @@ public sealed class Snapshot : IDisposable
             snapshot.pictures[entry.FullName] = Load(Read(archive, entry.FullName)!);
         }
 
+        // After the pictures, since handing a cut to a picture needs to know how large it is.
+        snapshot.MoveCutsOntoPictures();
+
         return snapshot;
+    }
+
+    /// <summary>
+    /// Hands the cuts a document before version 7 made across the whole canvas to the pictures they
+    /// crossed, so that it looks exactly as it did.
+    ///
+    /// Such a cut took its band out of everything, and closed the whole document up behind it. So
+    /// each picture it crossed is cut there, and everything past it, pictures and all, moves up or
+    /// across by what it took, which is precisely where it was being drawn. The one thing that
+    /// cannot come out the same is something that straddled the band: it was drawn in two halves
+    /// with the middle taken out, and now keeps its two ends with the band closed between them.
+    /// </summary>
+    void MoveCutsOntoPictures()
+    {
+        if (Document.Cuts is not { Count: > 0 } bands)
+        {
+            Document.Cuts = null;
+            return;
+        }
+
+        var closing = new CutLayout(bands);
+
+        foreach (var picture in Document.Layers.OfType<ImageAnnotation>())
+        {
+            var bounds = new Avalonia.Rect(picture.X, picture.Y, picture.Width, picture.Height);
+
+            if (BitmapOf(picture.Source) is { } bitmap)
+            {
+                // Furthest along first, so each band is found where the document says it is: a
+                // band cut out of a picture moves nothing of the picture before it.
+                foreach (var band in bands.OrderByDescending(band => band.At))
+                {
+                    PictureLayout.Cut(picture, bitmap.PixelSize, band.Axis, band.At, band.At + band.Extent);
+                }
+            }
+
+            var moved = closing.ToLaid(bounds);
+
+            picture.X = moved.X;
+            picture.Y = moved.Y;
+
+            // A picture that could not be drawn has no pixels to cut, so it is only made the size
+            // it was being drawn at.
+            if (BitmapOf(picture.Source) is null)
+            {
+                picture.Width = moved.Width;
+                picture.Height = moved.Height;
+            }
+        }
+
+        PictureLayout.MoveAll(Document.Layers, (point, _) => closing.ToLaid(point));
+
+        var canvas = closing.ToLaid(new Avalonia.Rect(Document.Canvas.X, Document.Canvas.Y, Document.Canvas.Width, Document.Canvas.Height));
+        Document.Canvas = new CanvasArea
+        {
+            X = (int)Math.Round(canvas.X), Y = (int)Math.Round(canvas.Y),
+            Width = (int)Math.Round(canvas.Width), Height = (int)Math.Round(canvas.Height)
+        };
+
+        if (Document.ManualCanvas is { } manual)
+        {
+            var set = closing.ToLaid(new Avalonia.Rect(manual.X, manual.Y, manual.Width, manual.Height));
+
+            (manual.X, manual.Y) = ((int)Math.Round(set.X), (int)Math.Round(set.Y));
+            (manual.Width, manual.Height) = ((int)Math.Round(set.Width), (int)Math.Round(set.Height));
+
+            foreach (var stood in manual.Pictures.Values)
+            {
+                var at = closing.ToLaid(new Avalonia.Rect(stood.X, stood.Y, stood.Width, stood.Height));
+                (stood.X, stood.Y, stood.Width, stood.Height) = (at.X, at.Y, at.Width, at.Height);
+            }
+        }
+
+        Document.Cuts = null;
     }
 
     /// <summary>
@@ -317,6 +380,9 @@ public sealed class Snapshot : IDisposable
     /// and is recorded as such.
     ///
     /// Version 6 let a picture be cropped, and an older picture has no crop, which is all of it.
+    ///
+    /// Version 7 moved the cuts onto the pictures. That needs the pictures' sizes, which are not
+    /// known yet here, so it happens once they are; see <see cref="MoveCutsOntoPictures"/>.
     ///
     /// A document from further ahead than this build is left exactly as it is, version and all.
     /// There is nothing here that could repair one, and stamping it back down to this version would

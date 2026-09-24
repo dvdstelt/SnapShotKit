@@ -55,9 +55,7 @@ public static class Export
     {
         var canvas = snapshot.Document.Canvas;
 
-        // The canvas with its cuts closed up, which is what the file actually comes out as: a band
-        // taken out of the middle makes the picture shorter, and the export is the picture.
-        var area = snapshot.Layout.ToLaid(new Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height));
+        var area = new Rect(canvas.X, canvas.Y, canvas.Width, canvas.Height);
 
         var size = new PixelSize(
             Math.Max((int)Math.Round(area.Width), 1),
@@ -144,7 +142,7 @@ public static class Export
     /// <param name="image">The point, in image pixels as the document measures them.</param>
     public static string? ColourAt(Snapshot snapshot, BlurCache blurs, Avalonia.Point image)
     {
-        var at = snapshot.Layout.ToLaid(new Rect(Math.Floor(image.X), Math.Floor(image.Y), 1, 1));
+        var at = new Rect(Math.Floor(image.X), Math.Floor(image.Y), 1, 1);
 
         using var rendered = new RenderTargetBitmap(new PixelSize(1, 1), new Vector(96, 96));
 

@@ -31,8 +31,7 @@ public static class SnapshotRenderer
     }
 
     /// <param name="area">
-    /// The stretch of laid-out space being drawn, in image pixels with the cuts already closed.
-    /// Usually the canvas, which is what gets exported. The editor passes something larger while the
+    /// The stretch of the canvas being drawn, in image pixels. Usually the canvas, which is what gets exported. The editor passes something larger while the
     /// canvas is being resized, so that what falls outside it can be seen rather than guessed at.
     /// </param>
     /// <param name="target">Where that stretch lands.</param>
@@ -40,52 +39,33 @@ public static class SnapshotRenderer
     /// An annotation to leave undrawn. Used while text is being typed in place, where the editor
     /// itself is showing the words: drawing them underneath as well would double every stroke.
     /// </param>
-    /// <param name="cropping">
-    /// A picture being cropped, drawn whole as if it had no crop, with what falls outside
-    /// <c>Keep</c> dimmed. Dimmed here rather than over the finished drawing, so that only the
-    /// picture's own pixels are: whatever stands on it, or another picture over it, is not going
-    /// anywhere, and dimming it too would say that it was.
+    /// <param name="dimming">
+    /// Part of one picture to dim, because it is about to be cropped or cut away. Dimmed here
+    /// rather than over the finished drawing, so that only the picture's own pixels are: whatever
+    /// stands on it, or another picture over it, is not going anywhere, and dimming it too would
+    /// say that it was.
     /// </param>
     public static void Draw(DrawingContext context, Snapshot snapshot, BlurCache blurs, Rect target, Rect area,
-        Annotation? suppress = null, (ImageAnnotation Picture, Rect Keep)? cropping = null)
+        Annotation? suppress = null, Dimming? dimming = null)
     {
         var scale = area.Width == 0 ? 1 : target.Width / area.Width;
 
         // Everything drawn on a snapshot is positioned against the capture's top-left corner rather
         // than the canvas's, so that cropping the canvas in or pushing it out moves nothing that was
-        // drawn on it. This is where that corner falls on the target, before any cut moves it.
+        // drawn on it. This is where that corner falls on the target.
         var origin = Origin(area, target, scale);
 
-        // A piece at a time, each one the whole picture drawn shifted by what the cuts before it
-        // took and clipped to its own band. With nothing cut that is one piece, no shift and a clip
-        // around everything, which is the same drawing as before cuts existed.
-        var layout = snapshot.Layout;
-
-        foreach (var (piece, shift) in layout.Pieces(layout.ToCapture(area)))
+        // Clipped to the stretch asked for, so that what stands past the canvas is left out of the
+        // export rather than drawn over whatever the target is part of.
+        using (context.PushClip(target))
         {
-            var laid = new Rect(piece.X - shift.X, piece.Y - shift.Y, piece.Width, piece.Height);
-
-            var within = new Rect(
-                origin.X + laid.X * scale,
-                origin.Y + laid.Y * scale,
-                laid.Width * scale,
-                laid.Height * scale);
-
-            if (within.Width <= 0 || within.Height <= 0)
-            {
-                continue;
-            }
-
-            using (context.PushClip(within))
-            {
-                DrawPiece(context, snapshot, blurs, origin - shift * scale, scale, suppress, cropping);
-            }
+            DrawLayers(context, snapshot, blurs, origin, scale, suppress, dimming);
         }
     }
 
     /// <summary>The pictures and everything on them, positioned in capture pixels from a given corner.</summary>
-    static void DrawPiece(DrawingContext context, Snapshot snapshot, BlurCache blurs, Point origin, double scale,
-        Annotation? suppress, (ImageAnnotation Picture, Rect Keep)? cropping)
+    static void DrawLayers(DrawingContext context, Snapshot snapshot, BlurCache blurs, Point origin, double scale,
+        Annotation? suppress, Dimming? dimming)
     {
         var layers = snapshot.Document.Layers;
         var dimmed = false;
@@ -106,9 +86,9 @@ public static class SnapshotRenderer
 
             switch (annotation)
             {
-                case ImageAnnotation image when cropping is { } crop && ReferenceEquals(image, crop.Picture)
+                case ImageAnnotation image when dimming is { } dim && ReferenceEquals(image, dim.Picture)
                                                 && snapshot.BitmapOf(image.Source) is { } bitmap:
-                    DrawCropping(context, bitmap, image, crop.Keep, origin, scale);
+                    DrawDimmed(context, bitmap, image, dim, origin, scale);
                     break;
 
                 case ImageAnnotation image when snapshot.BitmapOf(image.Source) is { } bitmap:
@@ -141,32 +121,40 @@ public static class SnapshotRenderer
         }
     }
 
-    /// <summary>What the part of a picture being cropped off is covered with, the same as the surround of a canvas being resized.</summary>
+    /// <summary>What the part of a picture being cropped or cut away is covered with, the same as the surround of a canvas being resized.</summary>
     static readonly IBrush CropScrim = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(0x9E, 0x2B, 0x2B, 0x2D));
 
     /// <summary>
-    /// A picture being cropped: all of it, standing where all of it would, with nothing cropped
-    /// off, and everything outside the part being kept dimmed.
+    /// Part of a picture dimmed. Being cropped, it is all of it, standing where all of it would with
+    /// nothing cropped off, dimmed outside the part being kept; being cut, it is the picture as it
+    /// is, dimmed across the band.
     /// </summary>
-    static void DrawCropping(DrawingContext context, Bitmap bitmap, ImageAnnotation image, Rect keep, Point origin, double scale)
+    static void DrawDimmed(DrawingContext context, Bitmap bitmap, ImageAnnotation image, Dimming dim, Point origin, double scale)
     {
-        var whole = PictureCrop.Whole(image, bitmap.PixelSize);
-        var uncropped = (ImageAnnotation)image.Copy();
+        var layout = new PictureLayout(image, bitmap.PixelSize);
+        var drawn = image;
 
-        uncropped.X = whole.X;
-        uncropped.Y = whole.Y;
-        uncropped.Width = whole.Width;
-        uncropped.Height = whole.Height;
-        uncropped.Crop = null;
+        if (dim.Crop)
+        {
+            var whole = layout.Whole;
+            drawn = (ImageAnnotation)image.Copy();
 
-        DrawPicture(context, bitmap, uncropped, origin, scale);
+            drawn.X = whole.X;
+            drawn.Y = whole.Y;
+            drawn.Width = whole.Width;
+            drawn.Height = whole.Height;
+            drawn.Crop = null;
+        }
+
+        DrawPicture(context, bitmap, drawn, origin, scale);
 
         Rect Placed(Rect rect) => new(origin.X + rect.X * scale, origin.Y + rect.Y * scale, rect.Width * scale, rect.Height * scale);
 
-        var dimmed = new CombinedGeometry(
-            GeometryCombineMode.Exclude,
-            new RectangleGeometry(Placed(whole)),
-            new RectangleGeometry(Placed(keep.Intersect(whole))));
+        var over = new Rect(drawn.X, drawn.Y, drawn.Width, drawn.Height);
+
+        Geometry dimmed = dim.Crop
+            ? new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(Placed(over)), new RectangleGeometry(Placed(dim.Region.Intersect(over))))
+            : new RectangleGeometry(Placed(dim.Region.Intersect(over)));
 
         context.DrawGeometry(CropScrim, null, dimmed);
     }
@@ -174,30 +162,35 @@ public static class SnapshotRenderer
     /// <summary>
     /// A picture where its layer puts it, stretched to the layer's size and mirrored as it says.
     ///
+    /// In pieces, one for each stretch between its cuts, and only the part its crop keeps. A
+    /// blurred copy is the same size as the picture it was made from, so the same pieces of it are
+    /// the ones under the blur.
+    ///
     /// Mirrored by drawing through a transform about the picture's own centre, so a flipped
     /// picture occupies exactly the rectangle an unflipped one would: flipping turns it round
     /// where it stands rather than swinging it across the canvas.
     /// </summary>
     static void DrawPicture(DrawingContext context, Bitmap bitmap, ImageAnnotation image, Point origin, double scale)
     {
-        var destination = new Rect(
-            origin.X + image.X * scale,
-            origin.Y + image.Y * scale,
-            Math.Max(image.Width * scale, 1),
-            Math.Max(image.Height * scale, 1));
+        var layout = new PictureLayout(image, bitmap.PixelSize);
 
-        // Only the part the crop keeps, stretched over the part of the canvas the layer covers.
-        // A blurred copy is the same size as the picture it was made from, so the same part of it
-        // is the part under the blur.
-        var source = PictureCrop.Source(image, bitmap.PixelSize);
+        Rect Placed(Rect rect) => new(origin.X + rect.X * scale, origin.Y + rect.Y * scale, rect.Width * scale, rect.Height * scale);
+
+        void Pieces()
+        {
+            foreach (var (source, canvas) in layout.Pieces())
+            {
+                context.DrawImage(bitmap, source, Placed(canvas));
+            }
+        }
 
         if (!image.FlipHorizontal && !image.FlipVertical)
         {
-            context.DrawImage(bitmap, source, destination);
+            Pieces();
             return;
         }
 
-        var centre = destination.Center;
+        var centre = Placed(layout.Bounds).Center;
 
         var mirror = Matrix.CreateTranslation(-centre.X, -centre.Y)
             * Matrix.CreateScale(image.FlipHorizontal ? -1 : 1, image.FlipVertical ? -1 : 1)
@@ -205,7 +198,7 @@ public static class SnapshotRenderer
 
         using (context.PushTransform(mirror))
         {
-            context.DrawImage(bitmap, source, destination);
+            Pieces();
         }
     }
 
@@ -614,3 +607,9 @@ public static class SnapshotRenderer
     public static Color ParseColor(string value)
         => Color.TryParse(value, out var color) ? color : Colors.Red;
 }
+
+/// <summary>
+/// Part of one picture to dim while it is being cropped or cut: outside <see cref="Region"/> when
+/// cropping, which also shows all of the picture, and across it when cutting. In image pixels.
+/// </summary>
+public readonly record struct Dimming(ImageAnnotation Picture, Rect Region, bool Crop);

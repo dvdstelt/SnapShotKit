@@ -530,10 +530,19 @@ public sealed class ImageAnnotation : RectAnnotation
     /// The part of the picture on show, in the picture's own pixels, or null for all of it.
     ///
     /// X, Y, Width and Height say where that part stands on the canvas, so a cropped picture is
-    /// moved, stretched and flipped exactly like one that is not. See <see cref="PictureCrop"/>.
+    /// moved, stretched and flipped exactly like one that is not. See <see cref="PictureLayout"/>.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CropArea? Crop { get; set; }
+
+    /// <summary>
+    /// The bands left out of the picture and closed up, in the picture's own pixels, or null for none.
+    ///
+    /// On the picture rather than across the canvas, so a cut takes something out of the picture
+    /// it was made in and nothing else, and goes wherever that picture goes.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CutBand>? Cuts { get; set; }
 
     [JsonIgnore]
     public bool IsCapture => Source == Capture;
@@ -542,7 +551,8 @@ public sealed class ImageAnnotation : RectAnnotation
     {
         Id = Id, X = X, Y = Y, Width = Width, Height = Height,
         Source = Source, FlipHorizontal = FlipHorizontal, FlipVertical = FlipVertical,
-        Crop = Crop?.Copy()
+        Crop = Crop?.Copy(),
+        Cuts = Cuts?.Select(cut => cut.Copy()).ToList()
     };
 
     /// <summary>A picture has no look to take on. Where it is and which way it faces are not style.</summary>
@@ -588,11 +598,11 @@ public enum CutAxis
 }
 
 /// <summary>
-/// A band cut out of the picture, in capture pixels.
+/// A band cut out of a picture, in that picture's own pixels, before any flip.
 ///
-/// Not a pixel edit: the capture is drawn in pieces with this band skipped and everything after it
-/// closed up. Taking the band out of the document puts the picture back exactly as it was, which is
-/// the same promise every other kind of editing here makes.
+/// Not a pixel edit: the picture is drawn in pieces with this band skipped and everything after it
+/// closed up. Taking the band away puts the picture back exactly as it was, which is the same
+/// promise every other kind of editing here makes.
 /// </summary>
 public sealed class CutBand
 {
@@ -686,8 +696,12 @@ public sealed class SnapshotDocument
     ///
     /// Version 6 let a picture be cropped. An older picture has no crop, which shows all of it, and
     /// that is what it meant, so there is nothing to fix up.
+    ///
+    /// Version 7 moved the cuts from the canvas onto the pictures. An older cut ran across the whole
+    /// document and took its band out of everything it crossed, so it is handed to every picture it
+    /// crossed, and everything past it is moved up or across by what it took.
     /// </summary>
-    public const int Current = 6;
+    public const int Current = 7;
 
     public int Version { get; set; } = Current;
 
@@ -700,20 +714,19 @@ public sealed class SnapshotDocument
     public List<Annotation> Layers { get; set; } = [];
 
     /// <summary>
-    /// The bands cut out of the picture, in capture pixels.
+    /// The bands a document before version 7 cut across the whole of it, in canvas pixels.
     ///
-    /// Kept apart from the layers because a cut is not something drawn on the picture: it changes
-    /// where the picture is, which is why it belongs beside the canvas rather than among the things
-    /// standing on it.
+    /// Only ever read. Opening such a document hands each band to the pictures it crossed, and
+    /// empties this, so it is never written again. See <see cref="ImageAnnotation.Cuts"/>.
     /// </summary>
-    public List<CutBand> Cuts { get; set; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CutBand>? Cuts { get; set; }
 
     public SnapshotDocument Copy() => new()
     {
         Version = Version,
         Canvas = new CanvasArea { X = Canvas.X, Y = Canvas.Y, Width = Canvas.Width, Height = Canvas.Height },
         ManualCanvas = ManualCanvas?.Copy(),
-        Layers = [.. Layers.Select(layer => layer.Copy())],
-        Cuts = [.. Cuts.Select(cut => cut.Copy())]
+        Layers = [.. Layers.Select(layer => layer.Copy())]
     };
 }
