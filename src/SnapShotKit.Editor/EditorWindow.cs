@@ -227,6 +227,7 @@ public sealed class EditorWindow : Window
 
         DockPanel.SetDock(footer, Dock.Bottom);
         layout.Children.Add(footer);
+        recent.HoldWhileOver(footer);
 
         // The picture, the sidebar beside it and the strip below both. A grid rather than more of
         // the dock, so the strip is in one place whether or not it is pinned: pinned, the picture

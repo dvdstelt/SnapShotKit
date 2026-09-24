@@ -74,6 +74,9 @@ public sealed class RecentStrip : Border
     /// </summary>
     readonly Popup menu;
 
+    /// <summary>Controls beside the strip that count as still being on it. See <see cref="HoldWhileOver"/>.</summary>
+    readonly List<Control> holders = [];
+
     bool pinned;
     bool raised;
 
@@ -172,7 +175,7 @@ public sealed class RecentStrip : Border
 
             retractDelay.Stop();
 
-            if (!IsPointerOver && !Handle.IsPointerOver)
+            if (!IsPointerOver && !Handle.IsPointerOver && !holders.Any(holder => holder.IsPointerOver))
             {
                 Retract();
             }
@@ -318,6 +321,21 @@ public sealed class RecentStrip : Border
     /// </summary>
     protected override Size MeasureOverride(Size availableSize) =>
         base.MeasureOverride(availableSize).WithWidth(0);
+
+    /// <summary>
+    /// Keeps the strip up while the pointer is over <paramref name="holder"/>, once it is up.
+    ///
+    /// For the status line directly below it. The pointer crossing from the strip to the zoom
+    /// controls has not left for the picture, and a strip that dropped away under it would have
+    /// to be fetched again from an edge the pointer has just gone past. It does not bring the strip
+    /// up: somebody reaching for the zoom has not asked for the captures.
+    /// </summary>
+    public void HoldWhileOver(Control holder)
+    {
+        holders.Add(holder);
+        holder.PointerEntered += (_, _) => retractDelay.Stop();
+        holder.PointerExited += (_, _) => RetractSoon();
+    }
 
     /// <summary>
     /// Brings the strip up without waiting for the pointer to fetch it, and leaves it there until
