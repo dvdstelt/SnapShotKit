@@ -10,6 +10,10 @@ DESTDIR    ?=
 CONFIG     ?= Release
 RUNTIME    ?= linux-x64
 
+# Empty means MinVer reads it from the nearest tag. A source tarball has no history to read, so a
+# build from one (COPR, rpmbuild) has to say which version it is.
+VERSION    ?=
+
 UUID       := snapshotkit@dvdstelt.github.io
 STAGE      := build/stage
 LIBEXEC    := $(DESTDIR)$(PREFIX)/lib/snapshotkit
@@ -23,7 +27,8 @@ ICON_SIZES := 16 22 24 32 48 64 128 256 512
 # keeps native libraries for every platform Avalonia supports, which is half a gigabyte of Windows
 # and macOS binaries in a Linux package.
 PUBLISH := dotnet publish -c $(CONFIG) -r $(RUNTIME) --nologo \
-	-p:DebugType=none -p:DebugSymbols=false
+	-p:DebugType=none -p:DebugSymbols=false \
+	$(if $(VERSION),-p:MinVerVersionOverride=$(VERSION))
 
 .PHONY: all build native clean install uninstall
 
