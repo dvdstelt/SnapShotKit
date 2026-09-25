@@ -12,7 +12,7 @@
 %global debug_package %{nil}
 
 Name:           snapshotkit
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Capture a region of the screen and annotate it
 
@@ -106,5 +106,11 @@ appstreamcli validate --no-net \
 :
 
 %changelog
+* Fri Sep 25 2026 Dennis van der Stelt <dvdstelt@gmail.com> - 0.2.0-1
+- Capture a window, or a region while it scrolls.
+- More drawing tools, pasted pictures, cropping, printing and WebP export.
+- Built for aarch64 as well as x86_64.
+- Source-available licence instead of the GPL.
+
 * Fri Aug 28 2026 Dennis van der Stelt <dvdstelt@gmail.com> - 0.1.0-1
 - First release.
