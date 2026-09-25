@@ -14,17 +14,41 @@ Printing (Ctrl+P) shows the sheet of paper with the picture on it. The picture c
 
 An image that was never captured here can be annotated too. Open one from the File menu, or right-click it in the file manager and open it with SnapShotKit, and it is wrapped in a snapshot of its own; the file you pointed at is only read.
 
-Target platform is Fedora on GNOME Wayland.
+It runs on GNOME 48 or later on Wayland, on x86-64 and arm64. There are packages for Fedora 44, Debian 13 and Ubuntu 25.04 onwards, and an AppImage for any other distribution with a recent enough GNOME. It is developed on Fedora.
 
 ## Installing
 
-Download the RPM from the [latest release](https://github.com/dvdstelt/SnapShotKit/releases) and install it:
+Every [release](https://github.com/dvdstelt/SnapShotKit/releases) has an RPM, a `.deb` and an AppImage for each architecture.
+
+**Fedora 44.** Install from COPR, which keeps it updated with the rest of the system:
+
+```bash
+sudo dnf copr enable dvdstelt/snapshotkit
+sudo dnf install snapshotkit
+```
+
+Or download the RPM from the release and install that:
 
 ```bash
 sudo dnf install ./snapshotkit-*.rpm
 ```
 
-Or build it yourself:
+**Debian and Ubuntu.** Download the `.deb` for your architecture (`amd64` or `arm64`) and install it:
+
+```bash
+sudo apt install ./snapshotkit_*.deb
+```
+
+**Anything else.** Download the AppImage, make it executable, and run its setup from wherever you are going to keep it. Setup writes that location into the Print binding and the launcher entries, so run it again if you move the file.
+
+```bash
+chmod +x SnapShotKit-*.AppImage
+./SnapShotKit-*.AppImage setup
+```
+
+The AppImage carries everything but PipeWire, which it takes from the system so that it matches the PipeWire that is running. Copy and paste also need `wl-clipboard`, which not every distribution installs by default.
+
+**From source:**
 
 ```bash
 sudo dnf install dotnet-sdk-10.0 gcc make pipewire-devel glib2-devel wl-clipboard
@@ -32,17 +56,13 @@ make
 sudo make install
 ```
 
-Then set it up for your account. This is per-user rather than something the install does, because a capture daemon is a decision each account makes for itself:
+Then, after any of the packages, set it up for your account. This is per-user rather than something the install does, because a capture daemon is a decision each account makes for itself (the AppImage's setup above is this same step):
 
 ```bash
 snapshotkit setup
 ```
 
-That enables the daemon and binds Print. To get the panel menu and a Print key that works even while a GNOME menu is open, enable the shell extension and log out and back in:
-
-```bash
-gnome-extensions enable snapshotkit@dvdstelt.github.io
-```
+That starts the daemon, binds Print and enables the shell extension. GNOME only loads a new extension at login, so log out and back in to get the panel menu and a Print key that also works while a GNOME menu is open.
 
 ## Using it
 

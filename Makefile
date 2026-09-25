@@ -10,6 +10,14 @@ DESTDIR    ?=
 CONFIG     ?= Release
 RUNTIME    ?= linux-x64
 
+# Empty means MinVer reads it from the nearest tag. A source tarball has no history to read, so a
+# build from one (COPR, rpmbuild) has to say which version it is.
+VERSION    ?=
+
+# The Fedora package runs the daemon and the editor on Fedora's own .NET runtime. The .deb and the
+# AppImage cannot, because Debian ships no .NET at all, so they carry the runtime with them.
+SELF_CONTAINED ?= false
+
 UUID       := snapshotkit@dvdstelt.github.io
 STAGE      := build/stage
 LIBEXEC    := $(DESTDIR)$(PREFIX)/lib/snapshotkit
@@ -23,7 +31,8 @@ ICON_SIZES := 16 22 24 32 48 64 128 256 512
 # keeps native libraries for every platform Avalonia supports, which is half a gigabyte of Windows
 # and macOS binaries in a Linux package.
 PUBLISH := dotnet publish -c $(CONFIG) -r $(RUNTIME) --nologo \
-	-p:DebugType=none -p:DebugSymbols=false
+	-p:DebugType=none -p:DebugSymbols=false \
+	$(if $(VERSION),-p:MinVerVersionOverride=$(VERSION))
 
 .PHONY: all build native clean install uninstall
 
@@ -38,8 +47,8 @@ build: native
 	@mkdir -p $(STAGE)
 	$(PUBLISH) src/SnapShotKit.Cli     -o $(STAGE)
 	$(PUBLISH) src/SnapShotKit.Overlay -o $(STAGE) -p:StripSymbols=true
-	$(PUBLISH) src/SnapShotKit.Daemon  --self-contained false -o $(STAGE)
-	$(PUBLISH) src/SnapShotKit.Editor  --self-contained false -o $(STAGE)
+	$(PUBLISH) src/SnapShotKit.Daemon  --self-contained $(SELF_CONTAINED) -o $(STAGE)
+	$(PUBLISH) src/SnapShotKit.Editor  --self-contained $(SELF_CONTAINED) -o $(STAGE)
 	@cp src/native/snapshotkit-capture/snapshotkit-capture $(STAGE)/
 	@rm -f $(STAGE)/*.dbg
 	@echo "staged in $(STAGE)"

@@ -26,6 +26,12 @@ internal static class ShellExtension
 
     public static bool IsInstalled => File.Exists(Path.Combine(InstalledPath, "metadata.json"));
 
+    /// <summary>True when a package installed it, in one of the directories the shell searches.</summary>
+    static bool IsInstalledSystemWide =>
+        (Environment.GetEnvironmentVariable("XDG_DATA_DIRS") is { Length: > 0 } dirs ? dirs : "/usr/local/share:/usr/share")
+            .Split(':', StringSplitOptions.RemoveEmptyEntries)
+            .Any(dir => File.Exists(Path.Combine(dir, "gnome-shell", "extensions", Uuid, "metadata.json")));
+
     /// <summary>True when the running shell has actually loaded it, rather than merely having it on disk.</summary>
     public static bool IsLive
     {
@@ -45,6 +51,18 @@ internal static class ShellExtension
     public static void Install()
     {
         var source = Locate();
+
+        // A package has already put the extension where the shell looks for it, so it only needs
+        // turning on. Copying it into the user's own directory as well would shadow the packaged
+        // copy, and the next package update would then change everything except the extension.
+        if (source is null && IsInstalledSystemWide)
+        {
+            AddToEnabledExtensions();
+            return;
+        }
+
+        source ??= LocateBundled()
+            ?? throw new DirectoryNotFoundException($"Could not find the {Uuid} source directory.");
 
         Directory.CreateDirectory(InstalledPath);
 
@@ -125,7 +143,8 @@ internal static class ShellExtension
 
     static string FormatList(IEnumerable<string> items) => $"[{string.Join(", ", items.Select(item => $"'{item}'"))}]";
 
-    static string Locate()
+    /// <summary>A copy somebody pointed at, or the one in a development checkout.</summary>
+    static string? Locate()
     {
         if (Environment.GetEnvironmentVariable("SNAPSHOTKIT_EXTENSION") is { Length: > 0 } configured)
         {
@@ -151,7 +170,18 @@ internal static class ShellExtension
             directory = directory.Parent;
         }
 
-        throw new DirectoryNotFoundException($"Could not find the {Uuid} source directory.");
+        return null;
+    }
+
+    /// <summary>
+    /// The copy that travels inside the application's own tree, the way the AppImage carries it. It
+    /// lives in a mount that disappears when the AppImage exits, so it is copied out rather than
+    /// pointed at.
+    /// </summary>
+    static string? LocateBundled()
+    {
+        var bundled = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "share", "gnome-shell", "extensions", Uuid));
+        return Directory.Exists(bundled) ? bundled : null;
     }
 
     static string Run(string fileName, params string[] arguments)

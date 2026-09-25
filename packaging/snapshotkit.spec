@@ -20,7 +20,7 @@ License:        LicenseRef-SnapShotKit
 URL:            https://github.com/dvdstelt/snapshotkit
 Source0:        %{url}/archive/v%{version}/%{forgename}-%{version}.tar.gz
 
-ExclusiveArch:  x86_64
+ExclusiveArch:  x86_64 aarch64
 
 BuildRequires:  dotnet-sdk-10.0
 BuildRequires:  gcc
@@ -67,7 +67,11 @@ the snapshots folder from the top bar.
 %build
 # NuGet restore needs the network. Fedora's mock disables it by default; a COPR project has to have
 # "enable network" turned on, which is the usual arrangement for .NET packages.
-%make_build build
+#
+# A source tarball carries no git history, so MinVer cannot read the version from a tag and has to
+# be told. The release workflow defines semver, because a pre-release like 0.2.0-alpha.0.3 is
+# spelled differently as an RPM version; everywhere else the spec's own version is the answer.
+%make_build build VERSION=%{?semver}%{!?semver:%{version}}
 
 %install
 %make_install PREFIX=%{_prefix}
