@@ -8,7 +8,10 @@
 PREFIX     ?= /usr
 DESTDIR    ?=
 CONFIG     ?= Release
-RUNTIME    ?= linux-x64
+# The machine being built on, unless told otherwise. The ahead-of-time client and overlay are
+# compiled by the native gcc, which cannot target another architecture, so an arm64 build that
+# defaulted to linux-x64 failed the moment it reached them. rpmbuild and COPR never pass one.
+RUNTIME    ?= $(if $(filter aarch64 arm64,$(shell uname -m)),linux-arm64,linux-x64)
 
 # Empty means MinVer reads it from the nearest tag. A source tarball has no history to read, so a
 # build from one (COPR, rpmbuild) has to say which version it is.
