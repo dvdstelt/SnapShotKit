@@ -97,6 +97,22 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.2.0" date="2026-09-25">
+      <description>
+        <p>Capture a window by clicking it, or follow a region while it scrolls. More to draw with, pictures that can be pasted, cropped and printed, and packages for Debian, Ubuntu and any other GNOME desktop.</p>
+        <ul>
+          <li>Pick a window to capture by clicking it, or follow a region while it is scrolled and join it into one picture</li>
+          <li>Lines, ellipses, highlights, a pen, a spotlight, a magnifying lens, callouts, and stronger ways of hiding</li>
+          <li>Take a colour from the picture, and nudge the selection with the arrow keys</li>
+          <li>Paste pictures onto the canvas, flip them, and crop or cut any one of them</li>
+          <li>Open any image, and export as WebP</li>
+          <li>Print from a dialog that shows the page, through CUPS or to a PDF</li>
+          <li>Styles and settings in a sidebar, and a recent strip that slides up and can copy, pin and delete captures</li>
+          <li>Packages for Debian 13 and Ubuntu 25.04 onwards, an AppImage, and arm64 builds</li>
+          <li>From this version SnapShotKit is source-available rather than GPL, and free to use until 1.0.0</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-08-28">
       <description>
         <p>First release.</p>
