@@ -1,6 +1,10 @@
 # SnapShotKit
 
-A screenshot and annotation tool for Linux, in the spirit of Snagit.
+A screenshot and annotation tool for Linux.
+
+<p align="center">
+<img width="750" alt="SnapShotKit" src="https://github.com/user-attachments/assets/75139a2f-7a4a-4f76-9513-6b26de56fdf2" />
+</p>
 
 Press Print and the whole screen is captured immediately, so timing a capture is easy. An overlay then appears on the frozen image, where you keep the whole screen, drag out a region, or click a window to take exactly that window; nothing moves under the cursor while you aim, because what you are aiming at is already a photograph.
 
