@@ -4,22 +4,7 @@ Contributions are welcome, and the source is published partly so that they are p
 
 ## The short version
 
-Fork, branch, open a pull request. That is the normal GitHub flow and it is explicitly permitted by [LICENSE](LICENSE) section 1e, which otherwise forbids copying the project around.
-
-Anyone whose contribution is merged gets a free perpetual licence to SnapShotKit, including 1.0.0 and everything after it. That is not a token: the person who fixes a bug should not then be asked to pay for the fix.
-
-## The contributor licence agreement
-
-Before the first pull request can be merged you will be asked to sign [the contributor licence agreement](CLA.md). It is short, and it says two things:
-
-- **You keep the copyright in what you wrote.** It is yours. Signing does not hand it over.
-- **You grant a licence broad enough to ship it and to relicense the project later.**
-
-The second point is the one that matters, and it is worth explaining rather than burying. SnapShotKit is source-available rather than open source, and one day it may be sold under other terms as well. If every contributor kept an unlicensed veto over their patch, none of that would be possible without tracking down every contributor who ever touched the file. Asking once, up front, is the honest version of that problem.
-
-Signing is a comment. A bot will post on your pull request asking for it; you reply with the sentence it quotes, and that is the whole ceremony. You sign once, and every pull request you open afterwards is covered.
-
-If you would rather not sign, that is a perfectly reasonable position. Open an issue describing the fix instead, and it will get credited in the commit that implements it.
+Fork, branch, open a pull request. There is no contributor licence agreement to sign. SnapShotKit is under the GPL, version 3 or later, and a contribution is accepted under the same terms: you keep the copyright in what you wrote, and it is licensed to everyone else exactly as the rest of the project is.
 
 ## Before you start on something large
 
