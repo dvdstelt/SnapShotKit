@@ -1,0 +1,43 @@
+# Builds and install-checks the x86-64 packages, as proof that the packaging still runs from a clean
+# checkout. Through packages.yml, the same workflow a release uses, so what is checked here is what
+# a release would do.
+#
+# Not for every change: only for pull requests that touch what the packages are made from, and on
+# demand. A change to the editor's code cannot break a packaging script, and ci.yml compiles it
+# either way. Pushes to main do not build packages, because the pull request already did and a
+# release rebuilds everything from scratch. "Run workflow" on the Actions tab builds them for any
+# branch, which is also how a change that only touches code gets packages to try on a real machine.
+#
+# x86-64 only: arm64 differs in the runner rather than in the scripts, and release.yml builds it.
+
+name: Package check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'packaging/**'
+      - 'Makefile'
+      - 'assets/**'
+      - 'src/extension/**'
+      - 'src/native/**'
+      - '.github/workflows/**'
+      - '**/*.csproj'
+      - '**/*.props'
+      - '**/*.targets'
+      - 'global.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    uses: ./.github/workflows/packages.yml
+    with:
+      matrix: '[{"rid": "linux-x64", "runner": "ubuntu-24.04"}]'
