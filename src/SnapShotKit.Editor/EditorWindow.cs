@@ -633,6 +633,8 @@ public sealed class EditorWindow : Window
         band.ToolChosen += SetTool;
         band.UndoRequested += Undo;
         band.RedoRequested += Redo;
+        band.BackwardRequested += () => Arrange(Order.Backward);
+        band.ForwardRequested += () => Arrange(Order.Forward);
 
         band.StyleChosen += ApplyStyle;
 
@@ -1992,6 +1994,7 @@ public sealed class EditorWindow : Window
         }
 
         band.Sync(tool, canvas.Defaults, canvas.Selected);
+        band.ShowAvailable(undo.Count > 0, redo.Count > 0, canvas.Selected is not null);
         band.ShowZoom(canvas.EffectiveScale);
         menu.Show(Path.GetFileName(snapshot.Path), dirty);
 

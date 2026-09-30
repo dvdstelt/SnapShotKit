@@ -111,6 +111,11 @@ public sealed class ToolBand : Border
     readonly Control canvasIcon = Lucide.Icon(Lucide.Frame, 14, Tokens.Neutral800Brush);
     readonly Border canvasReadout;
 
+    readonly ActionCell undoCell;
+    readonly ActionCell redoCell;
+    readonly ActionCell backwardCell;
+    readonly ActionCell forwardCell;
+
     const string CanvasTip = "Resize canvas  (C)\nDrag an edge in to cut everything off at that line, or out to add transparent space.\nTo trim a picture, crop it instead  (R).\nEnter applies, Escape backs out.";
 
     public ToolBand()
@@ -265,8 +270,10 @@ public sealed class ToolBand : Border
             }
         };
 
-        // The tools in the middle of the window, where the eye already is, and undo and redo at the
-        // end of the same row.
+        // The tools in the middle of the window, where the eye already is, and undo, redo and the
+        // stacking order at the end of the same row. Stacking was in the Edit menu and on the keys
+        // alone, which is as good as not having it: nobody goes looking for a command they do not
+        // know is there.
         var tools = BuildToolCells();
         tools.HorizontalAlignment = HorizontalAlignment.Center;
 
@@ -278,8 +285,34 @@ public sealed class ToolBand : Border
             HorizontalAlignment = HorizontalAlignment.Right
         };
 
-        right.Children.Add(TextAction("Undo", () => UndoRequested?.Invoke()));
-        right.Children.Add(TextAction("Redo", () => RedoRequested?.Invoke()));
+        undoCell = new ActionCell(Lucide.Undo, "Undo", "Undo  (Ctrl+Z)", () => UndoRequested?.Invoke());
+        redoCell = new ActionCell(Lucide.Redo, "Redo", "Redo  (Ctrl+Shift+Z)", () => RedoRequested?.Invoke());
+        backwardCell = new ActionCell(Lucide.Backward, "Backward",
+            "Send backward  (Ctrl+[)\nMoves the selection one step down, under what it overlaps.\nCtrl+Shift+[ sends it to the back.",
+            () => BackwardRequested?.Invoke());
+        forwardCell = new ActionCell(Lucide.Forward, "Forward",
+            "Bring forward  (Ctrl+])\nMoves the selection one step up, over what it overlaps.\nCtrl+Shift+] brings it to the front.",
+            () => ForwardRequested?.Invoke());
+
+        right.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 2,
+            Children = { undoCell.Cell, redoCell.Cell }
+        });
+        right.Children.Add(new Border
+        {
+            Width = 1,
+            Height = CellHeight - Tokens.Space.S4,
+            Background = Tokens.DividerBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        right.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 2,
+            Children = { backwardCell.Cell, forwardCell.Cell }
+        });
 
         canvasReadout = BuildCanvasReadout();
 
@@ -361,6 +394,26 @@ public sealed class ToolBand : Border
     public event Action? UndoRequested;
     public event Action? RedoRequested;
 
+    /// <summary>Move the selection one step down the stacking order.</summary>
+    public event Action? BackwardRequested;
+
+    /// <summary>Move the selection one step up the stacking order.</summary>
+    public event Action? ForwardRequested;
+
+    /// <summary>
+    /// Greys out whichever of undo, redo and the stacking order has nothing to act on.
+    ///
+    /// Only the look changes. A press on one still goes through, and the command it reaches already
+    /// does nothing when there is nothing to do, the same as when it comes from the keys.
+    /// </summary>
+    public void ShowAvailable(bool canUndo, bool canRedo, bool canArrange)
+    {
+        undoCell.Available = canUndo;
+        redoCell.Available = canRedo;
+        backwardCell.Available = canArrange;
+        forwardCell.Available = canArrange;
+    }
+
     Control BuildToolCells()
     {
         var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
@@ -428,6 +481,76 @@ public sealed class ToolBand : Border
     }
 
     public EditorTool Active { get; private set; } = EditorTool.Arrow;
+
+    /// <summary>
+    /// A command in the band, drawn like a tool: an icon over its name, in a cell the same size.
+    ///
+    /// Undo and redo were words, beside a row of icons, which made them look like something other
+    /// than controls. A cell of the tools' own shape says they belong to the same row.
+    /// </summary>
+    sealed class ActionCell
+    {
+        readonly Control glyph;
+        readonly TextBlock label;
+
+        public ActionCell(string geometry, string name, string tip, Action clicked)
+        {
+            glyph = Lucide.Icon(geometry, 19, Tokens.Neutral800Brush);
+
+            label = Labels.Body(name, 11, Tokens.Neutral700Brush);
+            label.HorizontalAlignment = HorizontalAlignment.Center;
+
+            Cell = new Border
+            {
+                Width = CellWidth,
+                Height = CellHeight,
+                Background = Tokens.BgBrush,
+                CornerRadius = Tokens.Radius,
+                Child = new StackPanel
+                {
+                    Spacing = 3,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Children = { glyph, label }
+                },
+                Cursor = new Cursor(StandardCursorType.Hand)
+            };
+
+            ToolTip.SetTip(Cell, tip);
+
+            Cell.PointerPressed += (_, _) => clicked();
+            Cell.PointerEntered += (_, _) => { if (Available) Cell.Background = Tokens.Neutral200Brush; };
+            Cell.PointerExited += (_, _) => Cell.Background = Tokens.BgBrush;
+        }
+
+        public Border Cell { get; }
+
+        public bool Available
+        {
+            get;
+            set
+            {
+                if (field == value)
+                {
+                    return;
+                }
+
+                field = value;
+
+                if (glyph is Viewbox { Child: Avalonia.Controls.Shapes.Path path })
+                {
+                    path.Stroke = value ? Tokens.Neutral800Brush : Tokens.Neutral400Brush;
+                }
+
+                label.Foreground = value ? Tokens.Neutral700Brush : Tokens.Neutral400Brush;
+                Cell.Cursor = new Cursor(value ? StandardCursorType.Hand : StandardCursorType.Arrow);
+
+                if (!value)
+                {
+                    Cell.Background = Tokens.BgBrush;
+                }
+            }
+        } = true;
+    }
 
     /// <summary>A part of the sidebar: a heading over a hairline, and what it heads.</summary>
     static Control Section(string heading, Control content) => new StackPanel
