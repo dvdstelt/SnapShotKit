@@ -53,7 +53,16 @@ public sealed class ColourField : StackPanel
 
     string current = Tokens.AnnotationDefault;
 
-    public ColourField(Action<string> picked)
+    /// <summary>What a field that offers no colour at all reports when that is chosen.</summary>
+    public const string Transparent = "transparent";
+
+    /// <param name="picked">Called with the colour chosen, as hex, or <see cref="Transparent"/>.</param>
+    /// <param name="offersTransparent">
+    /// Whether no colour at all is a choice, as a swatch ahead of the rest. Only where nothing is a
+    /// meaningful colour to have, such as the far end of a fade; for a border or a line it would
+    /// only be a way to draw something invisible.
+    /// </param>
+    public ColourField(Action<string> picked, bool offersTransparent = false)
     {
         this.picked = picked;
 
@@ -61,9 +70,16 @@ public sealed class ColourField : StackPanel
         Spacing = 4;
         VerticalAlignment = VerticalAlignment.Center;
 
-        foreach (var colour in Palette)
+        IEnumerable<string> offered = offersTransparent ? [Transparent, .. Palette] : Palette;
+
+        foreach (var colour in offered)
         {
-            var (ring, swatch) = Swatch(new SolidColorBrush(Color.Parse(colour)));
+            var (ring, swatch) = Swatch(colour == Transparent ? Nothing() : new SolidColorBrush(Color.Parse(colour)));
+
+            if (colour == Transparent)
+            {
+                ToolTip.SetTip(swatch, "Transparent");
+            }
 
             var value = colour;
             swatch.PointerPressed += (_, _) => Choose(value);
@@ -117,6 +133,29 @@ public sealed class ColourField : StackPanel
         return (ring, swatch);
     }
 
+    /// <summary>
+    /// White struck through in red, the usual way of drawing no colour at all.
+    ///
+    /// Not the chequerboard, which already stands for the picker's "some other colour" at the end of
+    /// the same row, and two swatches that look alike and mean different things is one too many.
+    /// </summary>
+    static IBrush Nothing() => new DrawingBrush
+    {
+        Stretch = Stretch.Fill,
+        Drawing = new DrawingGroup
+        {
+            Children =
+            {
+                new GeometryDrawing { Brush = Brushes.White, Geometry = new RectangleGeometry(new Rect(0, 0, 16, 16)) },
+                new GeometryDrawing
+                {
+                    Pen = new Pen(new SolidColorBrush(Color.Parse(Tokens.AnnotationDefault)), 1.5),
+                    Geometry = new LineGeometry(new Point(16, 0), new Point(0, 16))
+                }
+            }
+        }
+    };
+
     /// <summary>A small chequerboard, the usual way of drawing "no colour in particular".</summary>
     static IBrush Chequer() => new DrawingBrush
     {
@@ -145,7 +184,8 @@ public sealed class ColourField : StackPanel
 
     void Open()
     {
-        var picker = new ColourPicker(current);
+        // No colour at all has no hue to start the picker from.
+        var picker = new ColourPicker(current == Transparent ? Tokens.AnnotationDefault : current);
         picker.Chosen += Choose;
 
         popup.Child = Blueprint.Wrap(new Border

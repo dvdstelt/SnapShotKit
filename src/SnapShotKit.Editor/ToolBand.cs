@@ -63,6 +63,9 @@ public sealed class ToolBand : Border
     readonly NumberField textSize;
     readonly Segmented head;
     readonly Segmented fill;
+    readonly Segmented border;
+    readonly ColourField gradientTo;
+    readonly Segmented gradientDirection;
     readonly Segmented cutDirection;
 
     readonly StyleGrid style;
@@ -94,6 +97,9 @@ public sealed class ToolBand : Border
     readonly Control zoomGroup;
     readonly Control dimGroup;
     readonly Control fillGroup;
+    readonly Control borderGroup;
+    readonly Control gradientToGroup;
+    readonly Control gradientDirectionGroup;
     readonly Control blurGroup;
     readonly Control textSizeGroup;
     readonly Control cutDirectionGroup;
@@ -169,7 +175,18 @@ public sealed class ToolBand : Border
             2 => CutAxis.Columns,
             _ => null
         }));
-        fill = new Segmented(["None", "Solid"], index => FillChosen?.Invoke(index == 1));
+        fill = new Segmented(["None", "Solid", "Gradient"], index => FillChosen?.Invoke((BoxFill)index));
+        border = new Segmented(["None", "Solid"], index => BorderChosen?.Invoke(index == 1));
+
+        // Transparent first among the colours a fade can end on, since fading something out is
+        // what a gradient over a screenshot is nearly always for.
+        gradientTo = new ColourField(value => GradientToChosen?.Invoke(value), offersTransparent: true);
+
+        // Named for the way the fill colour runs, which is the thing being chosen: "Down" starts at
+        // the top in the fill colour and fades towards the bottom.
+        gradientDirection = new Segmented(["Down", "Right", "Up", "Left"],
+            index => GradientAngleChosen?.Invoke(GradientAngles[index]));
+        ToolTip.SetTip(gradientDirection, "Which way the fill colour fades.\nDown starts at the top in the fill colour and fades towards the bottom.");
 
         style = new StyleGrid(chosen => StyleChosen?.Invoke(chosen));
 
@@ -195,6 +212,9 @@ public sealed class ToolBand : Border
         tailGroup = Group("Callout", tail);
         zoomGroup = Group("Magnification", lens);
         fillGroup = Group("Fill", fill);
+        borderGroup = Group("Border", border);
+        gradientToGroup = Group("Fade to", gradientTo);
+        gradientDirectionGroup = Group("Direction", gradientDirection);
         blurGroup = Group("Blur", blur);
         textSizeGroup = Group("Size", textSize);
         textBackGroup = Group("Background", textBack);
@@ -237,8 +257,8 @@ public sealed class ToolBand : Border
 
         foreach (var group in new[]
                  {
-                     colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
-                     headGroup, shapeGroup, hideGroup, dimGroup, zoomGroup, tailGroup, fillGroup, fillColourGroup, textBackGroup, textBackColourGroup,
+                     borderGroup, colourGroup, weightGroup, blurGroup, textSizeGroup, stepNumberGroup, stepSizeGroup,
+                     headGroup, shapeGroup, hideGroup, dimGroup, zoomGroup, tailGroup, fillGroup, fillColourGroup, gradientToGroup, gradientDirectionGroup, textBackGroup, textBackColourGroup,
                      cutDirectionGroup, canvasWidthGroup, canvasHeightGroup, canvasFitGroup, cropWholeGroup, pictureGroup
                  })
         {
@@ -353,7 +373,15 @@ public sealed class ToolBand : Border
     public event Action<double>? LensChosen;
     public event Action<bool>? TailChosen;
     public event Action? PickColourRequested;
-    public event Action<bool>? FillChosen;
+    public event Action<BoxFill>? FillChosen;
+    public event Action<bool>? BorderChosen;
+    public event Action<string>? GradientToChosen;
+
+    /// <summary>Which way a gradient runs, in degrees clockwise from pointing right.</summary>
+    public event Action<int>? GradientAngleChosen;
+
+    /// <summary>The angles behind the direction switch, in the order it offers them.</summary>
+    static readonly int[] GradientAngles = [90, 0, 270, 180];
     public event Action<int>? BlurChosen;
     public event Action<double>? TextSizeChosen;
     public event Action<bool>? TextBackChosen;
@@ -902,9 +930,22 @@ public sealed class ToolBand : Border
         pictureGroup.IsVisible = selected is ImageAnnotation;
         pictureUncut.IsVisible = selected is ImageAnnotation { Cuts.Count: > 0 };
 
-        // A fill colour only means anything when there is a fill to colour.
+        // A fill colour only means anything when there is a fill to colour, and where it fades to
+        // only when it fades. The border's colour and weight likewise go with the border.
         var filled = selected is BoxAnnotation box ? box.HasFill : defaults.BoxFilled;
+        var faded = selected is BoxAnnotation fadedBox ? fadedBox.HasGradient : defaults.BoxFilled && defaults.BoxGradient;
+        var bordered = selected is BoxAnnotation borderedBox ? borderedBox.HasBorder : defaults.BoxBordered;
+
         fillColourGroup.IsVisible = kind is EditorTool.Box && filled;
+        gradientToGroup.IsVisible = kind is EditorTool.Box && faded;
+        gradientDirectionGroup.IsVisible = kind is EditorTool.Box && faded;
+        borderGroup.IsVisible = kind is EditorTool.Box;
+
+        if (kind is EditorTool.Box && !bordered)
+        {
+            colourGroup.IsVisible = false;
+            weightGroup.IsVisible = false;
+        }
 
         var backed = selected is TextAnnotation backedText ? backedText.HasBackground : defaults.TextBackgrounded;
         textBackColourGroup.IsVisible = kind is EditorTool.Text && backed;
@@ -926,8 +967,11 @@ public sealed class ToolBand : Border
                 colour.Show(shape.BorderColor);
                 weight.Show(shape.BorderThickness);
                 this.shape.Select(shape.Ellipse ? 1 : 0);
-                fill.Select(shape.HasFill ? 1 : 0);
+                fill.Select((int)(shape.HasGradient ? BoxFill.Gradient : shape.HasFill ? BoxFill.Solid : BoxFill.None));
                 fillColour.Show(shape.HasFill ? shape.FillColor : defaults.BoxFillColor);
+                border.Select(shape.HasBorder ? 1 : 0);
+                gradientTo.Show(shape.HasGradient ? shape.GradientTo : defaults.BoxGradientTo);
+                gradientDirection.Select(DirectionOf(shape.HasGradient ? shape.GradientAngle : defaults.BoxGradientAngle));
                 break;
 
             case BlurAnnotation region:
@@ -988,11 +1032,29 @@ public sealed class ToolBand : Border
                 hide.Select((int)defaults.HideMode);
                 dim.Show(defaults.SpotlightDim);
                 lens.Show(defaults.MagnifyZoom);
-                fill.Select(defaults.BoxFilled ? 1 : 0);
+                fill.Select((int)(!defaults.BoxFilled ? BoxFill.None : defaults.BoxGradient ? BoxFill.Gradient : BoxFill.Solid));
                 fillColour.Show(defaults.BoxFillColor);
+                border.Select(defaults.BoxBordered ? 1 : 0);
+                gradientTo.Show(defaults.BoxGradientTo);
+                gradientDirection.Select(DirectionOf(defaults.BoxGradientAngle));
                 blur.Show(defaults.BlurStrength);
                 textSize.Show(defaults.TextSize);
                 break;
         }
     }
+
+    /// <summary>Which of the direction switch's options an angle is, going to the nearest for one it does not offer.</summary>
+    static int DirectionOf(int angle)
+    {
+        var turned = ((angle % 360) + 360) % 360;
+        return Array.IndexOf(GradientAngles, (int)(Math.Round(turned / 90.0) * 90 % 360));
+    }
+}
+
+/// <summary>How a box is filled: not at all, in one colour, or fading from one colour to another.</summary>
+public enum BoxFill
+{
+    None,
+    Solid,
+    Gradient
 }

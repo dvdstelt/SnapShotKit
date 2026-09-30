@@ -77,6 +77,16 @@ public sealed class ToolDefaults
 
     public bool BoxEllipse { get; set; }
 
+    public bool BoxBordered { get; set; } = true;
+
+    /// <summary>Whether a filled box fades rather than being one colour. Kept apart from the colours, like the fill itself.</summary>
+    public bool BoxGradient { get; set; }
+
+    /// <summary>What a gradient fades to. Nothing at all by default, so the first gradient anyone draws is black fading out.</summary>
+    public string BoxGradientTo { get; set; } = BoxAnnotation.Transparent;
+
+    public int BoxGradientAngle { get; set; } = 90;
+
     public int BlurStrength { get; set; } = 35;
 
     public HideMode HideMode { get; set; }
@@ -133,10 +143,18 @@ public sealed class ToolDefaults
                 BoxBorderThickness = box.BorderThickness;
                 BoxFilled = box.HasFill;
                 BoxEllipse = box.Ellipse;
+                BoxBordered = box.HasBorder;
+                BoxGradient = box.HasGradient;
 
                 if (box.HasFill)
                 {
                     BoxFillColor = box.FillColor;
+                }
+
+                if (box.HasGradient)
+                {
+                    BoxGradientTo = box.GradientTo;
+                    BoxGradientAngle = box.GradientAngle;
                 }
 
                 break;
@@ -188,6 +206,9 @@ public sealed class ToolDefaults
         BoxAnnotation box => BoxBorderColor == box.BorderColor
             && BoxBorderThickness == box.BorderThickness
             && (BoxFilled ? BoxFillColor : string.Empty) == box.FillColor
+            && (BoxFilled && BoxGradient ? BoxGradientTo : string.Empty) == box.GradientTo
+            && (!box.HasGradient || BoxGradientAngle == box.GradientAngle)
+            && BoxBordered == box.HasBorder
             && BoxEllipse == box.Ellipse,
 
         TextAnnotation text => TextColor == text.Color
@@ -900,7 +921,10 @@ public sealed class CanvasView : Decorator
             X = image.X, Y = image.Y,
             BorderColor = Defaults.BoxBorderColor,
             BorderThickness = Defaults.BoxBorderThickness,
+            HasBorder = Defaults.BoxBordered,
             FillColor = Defaults.BoxFilled ? Defaults.BoxFillColor : string.Empty,
+            GradientTo = Defaults.BoxFilled && Defaults.BoxGradient ? Defaults.BoxGradientTo : string.Empty,
+            GradientAngle = Defaults.BoxGradientAngle,
             Ellipse = Defaults.BoxEllipse
         },
 
@@ -2507,8 +2531,10 @@ public sealed class CanvasView : Decorator
 
                 // A box without a fill is a border around something the user still wants to work
                 // on. Treating its whole interior as the box would make everything inside it
-                // unreachable, so only the border itself is hit.
-                BoxAnnotation box when !box.HasFill => OnBoxBorder(box, image),
+                // unreachable, so only the border itself is hit. One with neither a fill nor a
+                // border has nothing to be hit by, and is picked up anywhere inside instead of
+                // becoming a box nobody can ever select again.
+                BoxAnnotation box when !box.HasFill && box.ShowsBorder => OnBoxBorder(box, image),
                 RectAnnotation rect => image.X >= rect.X && image.X <= rect.X + rect.Width
                     && image.Y >= rect.Y && image.Y <= rect.Y + rect.Height,
                 TextAnnotation text => BoundsOf(text).Contains(image),

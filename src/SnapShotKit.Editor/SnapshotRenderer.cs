@@ -366,9 +366,9 @@ public static class SnapshotRenderer
             Math.Max(box.Width * scale, 1),
             Math.Max(box.Height * scale, 1));
 
-        var fill = box.HasFill ? BrushFor(box.FillColor) : null;
+        var fill = box.HasGradient ? GradientFor(box) : box.HasFill ? BrushFor(box.FillColor) : null;
         var thickness = Math.Max(box.BorderThickness * scale, 0);
-        var pen = thickness > 0 ? new Pen(BrushFor(box.BorderColor), thickness) : null;
+        var pen = box.ShowsBorder && thickness > 0 ? new Pen(BrushFor(box.BorderColor), thickness) : null;
 
         if (box.Ellipse)
         {
@@ -377,6 +377,32 @@ public static class SnapshotRenderer
         }
 
         context.DrawRectangle(fill, pen, rect);
+    }
+
+    /// <summary>
+    /// A box's gradient, across the box whatever its size, from the fill colour to the colour it
+    /// fades to.
+    ///
+    /// Relative to the shape being filled, so the gradient stretches with the box as it is resized
+    /// and an ellipse is faded across its own extent rather than the rectangle around it.
+    /// </summary>
+    static IBrush GradientFor(BoxAnnotation box)
+    {
+        var from = ParseColor(box.FillColor);
+        var to = box.GradientTo == BoxAnnotation.Transparent
+            ? Color.FromArgb(0, from.R, from.G, from.B)
+            : ParseColor(box.GradientTo);
+
+        // From the edge the gradient starts at to the one opposite, through the middle.
+        var radians = box.GradientAngle * Math.PI / 180;
+        var (dx, dy) = (Math.Cos(radians) / 2, Math.Sin(radians) / 2);
+
+        return new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0.5 - dx, 0.5 - dy, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0.5 + dx, 0.5 + dy, RelativeUnit.Relative),
+            GradientStops = { new GradientStop(from, 0), new GradientStop(to, 1) }
+        };
     }
 
     /// <summary>Lays out an annotation's text. Shared so hit testing measures exactly what is drawn.</summary>
