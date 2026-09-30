@@ -113,6 +113,22 @@ public static class Lucide
     public const string Location = "M10,13 a5,5 0 0 0 7.54,0.54 l3,-3 a5,5 0 0 0 -7.07,-7.07 l-1.72,1.71 "
         + "M14,11 a5,5 0 0 0 -7.54,-0.54 l-3,3 a5,5 0 0 0 7.07,7.07 l1.71,-1.71";
 
+    /// <summary>undo-2. Taking the last change back.</summary>
+    public const string Undo = "M9,14 L4,9 L9,4 M4,9 H14.5 A5.5,5.5 0 0 1 20,14.5 A5.5,5.5 0 0 1 14.5,20 H11";
+
+    /// <summary>redo-2. Doing again what was just taken back.</summary>
+    public const string Redo = "M15,14 L20,9 L15,4 M20,9 H9.5 A5.5,5.5 0 0 0 4,14.5 A5.5,5.5 0 0 0 9.5,20 H13";
+
+    /// <summary>bring-to-front. Raising the selection over whatever it overlaps.</summary>
+    public const string Forward = "M10,8 H14 A2,2 0 0 1 16,10 V14 A2,2 0 0 1 14,16 H10 A2,2 0 0 1 8,14 V10 A2,2 0 0 1 10,8 Z "
+        + "M4,10 A2,2 0 0 1 2,8 V4 A2,2 0 0 1 4,2 H8 A2,2 0 0 1 10,4 "
+        + "M14,20 A2,2 0 0 0 16,22 H20 A2,2 0 0 0 22,20 V16 A2,2 0 0 0 20,14";
+
+    /// <summary>send-to-back. Lowering the selection under whatever it overlaps.</summary>
+    public const string Backward = "M16,14 H20 A2,2 0 0 1 22,16 V20 A2,2 0 0 1 20,22 H16 A2,2 0 0 1 14,20 V16 A2,2 0 0 1 16,14 Z "
+        + "M4,2 H8 A2,2 0 0 1 10,4 V8 A2,2 0 0 1 8,10 H4 A2,2 0 0 1 2,8 V4 A2,2 0 0 1 4,2 Z "
+        + "M7,14 V15 A2,2 0 0 0 9,17 H10 M14,7 H15 A2,2 0 0 1 17,9 V10";
+
     /// <summary>
     /// Builds a glyph at a given size.
     ///
