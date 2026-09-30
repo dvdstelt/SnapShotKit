@@ -334,6 +334,15 @@ public sealed class BoxAnnotation : RectAnnotation
     public double BorderThickness { get; set; } = 4;
 
     /// <summary>
+    /// Whether the border is drawn. Apart from its thickness, so a border switched off and on again
+    /// comes back at the weight it had. True for any document from before a box could go without.
+    /// </summary>
+    public bool HasBorder { get; set; } = true;
+
+    [JsonIgnore]
+    public bool ShowsBorder => HasBorder && BorderThickness > 0;
+
+    /// <summary>
     /// Empty means no fill. A box drawn over a screenshot is usually an outline, so that is the
     /// default; any other value is the fill's own colour, chosen independently of the border's.
     /// </summary>
@@ -341,6 +350,22 @@ public sealed class BoxAnnotation : RectAnnotation
 
     [JsonIgnore]
     public bool HasFill => !string.IsNullOrWhiteSpace(FillColor);
+
+    /// <summary>Stands for no colour at all as the far end of a gradient: the fill fading out to nothing.</summary>
+    public const string Transparent = SnapShotKit.Ui.ColourField.Transparent;
+
+    /// <summary>
+    /// The colour a gradient fill fades to, from <see cref="FillColor"/>, or empty for a solid fill.
+    /// <see cref="Transparent"/> fades the fill colour itself out, which is how black to nothing is
+    /// drawn without a grey band in the middle, as fading towards transparent black would give.
+    /// </summary>
+    public string GradientTo { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public bool HasGradient => HasFill && !string.IsNullOrWhiteSpace(GradientTo);
+
+    /// <summary>Which way the gradient runs from its first colour, in degrees clockwise from pointing right: 90 runs top to bottom.</summary>
+    public int GradientAngle { get; set; } = 90;
 
     /// <summary>
     /// Round rather than square: the ellipse that fits the same rectangle.
@@ -354,7 +379,8 @@ public sealed class BoxAnnotation : RectAnnotation
     public override Annotation Copy() => new BoxAnnotation
     {
         Id = Id, X = X, Y = Y, Width = Width, Height = Height,
-        BorderColor = BorderColor, BorderThickness = BorderThickness, FillColor = FillColor, Ellipse = Ellipse
+        BorderColor = BorderColor, BorderThickness = BorderThickness, HasBorder = HasBorder,
+        FillColor = FillColor, GradientTo = GradientTo, GradientAngle = GradientAngle, Ellipse = Ellipse
     };
 
     public override void AdoptStyle(Annotation style)
@@ -363,13 +389,17 @@ public sealed class BoxAnnotation : RectAnnotation
         {
             BorderColor = box.BorderColor;
             BorderThickness = box.BorderThickness;
+            HasBorder = box.HasBorder;
             FillColor = box.FillColor;
+            GradientTo = box.GradientTo;
+            GradientAngle = box.GradientAngle;
             Ellipse = box.Ellipse;
         }
     }
 
     public override bool WearsStyle(Annotation style) => style is BoxAnnotation box
-        && BorderColor == box.BorderColor && BorderThickness == box.BorderThickness && FillColor == box.FillColor
+        && BorderColor == box.BorderColor && BorderThickness == box.BorderThickness && HasBorder == box.HasBorder
+        && FillColor == box.FillColor && GradientTo == box.GradientTo && GradientAngle == box.GradientAngle
         && Ellipse == box.Ellipse;
 }
 

@@ -147,7 +147,7 @@ public static class AnnotationStyles
         new() { BorderColor = colour, BorderThickness = thickness, Ellipse = true };
 
     static BoxAnnotation Highlight(string fill) =>
-        new() { BorderColor = Black, BorderThickness = 0, FillColor = fill };
+        new() { BorderColor = Black, BorderThickness = 0, HasBorder = false, FillColor = fill };
 
     static BoxAnnotation Box(string colour, double thickness, string fill = "") =>
         new() { BorderColor = colour, BorderThickness = thickness, FillColor = fill };

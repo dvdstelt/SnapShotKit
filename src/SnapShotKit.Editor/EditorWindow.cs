@@ -713,19 +713,63 @@ public sealed class EditorWindow : Window
             Apply<BlurAnnotation>("hide", blur => blur.Mode = mode);
         };
 
-        band.FillChosen += filled =>
+        band.FillChosen += kind =>
         {
             if (canvas is null) return;
 
+            var filled = kind is not BoxFill.None;
+            var faded = kind is BoxFill.Gradient;
+
             canvas.Defaults.BoxFilled = filled;
+            canvas.Defaults.BoxGradient = faded;
 
             // Turning a fill off keeps the colour it had, so turning it back on restores it rather
-            // than starting over at the default.
-            Apply<BoxAnnotation>("fill", box => box.FillColor = filled
-                ? (box.HasFill ? box.FillColor : canvas.Defaults.BoxFillColor)
-                : string.Empty);
+            // than starting over at the default. A gradient keeps the fill colour as the one it
+            // starts from, so a solid black box made a gradient is black fading out.
+            Apply<BoxAnnotation>("fill", box =>
+            {
+                box.FillColor = filled
+                    ? (box.HasFill ? box.FillColor : canvas.Defaults.BoxFillColor)
+                    : string.Empty;
+
+                box.GradientTo = faded
+                    ? (box.HasGradient ? box.GradientTo : canvas.Defaults.BoxGradientTo)
+                    : string.Empty;
+
+                if (faded && !box.HasGradient)
+                {
+                    box.GradientAngle = canvas.Defaults.BoxGradientAngle;
+                }
+            });
 
             UpdateChrome();
+        };
+
+        band.BorderChosen += bordered =>
+        {
+            if (canvas is null) return;
+
+            canvas.Defaults.BoxBordered = bordered;
+            Apply<BoxAnnotation>("border", box => box.HasBorder = bordered);
+
+            // The border's colour and weight come and go with it.
+            UpdateChrome();
+        };
+
+        band.GradientToChosen += to =>
+        {
+            if (canvas is null) return;
+
+            canvas.Defaults.BoxGradientTo = to;
+            Apply<BoxAnnotation>("gradient-to", box => box.GradientTo = to);
+        };
+
+        band.GradientAngleChosen += angle =>
+        {
+            if (canvas is null) return;
+
+            canvas.Defaults.BoxGradientAngle = angle;
+            Apply<BoxAnnotation>("gradient-angle", box => box.GradientAngle = angle);
         };
 
         band.FillColourChosen += fill =>
