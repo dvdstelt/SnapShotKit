@@ -1,6 +1,6 @@
-# Builds every package and proves each one installs and runs. Called by ci.yml on every push and
-# pull request, and by release.yml for a release, so a release can never be the first thing to
-# build a package: whatever it attaches has been through exactly these steps.
+# Builds every package and proves each one installs and runs. Called by package-check.yml for a
+# pull request that touches the packaging, and by release.yml for a release, so a release can never
+# be the first thing to build a package: whatever it attaches has been through exactly these steps.
 #
 # Three formats per architecture, from two builds:
 #   rpm      Fedora-native, from packaging/snapshotkit.spec in a Fedora container, on Fedora's own

@@ -123,7 +123,7 @@ An imported image lands there too, and never beside the file it came from. Openi
 - **libpipewire is never bundled.** The capture helper has to match the PipeWire that is running.
 - **Nothing may persist a path from inside an AppImage.** It is mounted somewhere new on every start. Anything setup writes down for later names `AppImage.File` and a verb that `AppRun` dispatches on, quoted for whoever parses it.
 - Architecture and pre-release spellings differ per format; both mappings are in `scripts/package/common.sh` and belong nowhere else.
-- `.github/workflows/packages.yml` is the only place packages are built. CI and the release both call it, so change the build there, never in one caller.
+- `.github/workflows/packages.yml` is the only place packages are built. The package check and the release both call it, so change the build there, never in one caller. The package check runs only for pull requests touching the paths listed in `package-check.yml`; a new file the packages are made from belongs on that list, or a change to it will never be package-checked before a release.
 
 ## Platform rules that are easy to get wrong
 

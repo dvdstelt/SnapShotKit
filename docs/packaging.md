@@ -107,7 +107,9 @@ This builds on Fedora as well as on Ubuntu: the `.deb` is assembled with `ar` an
 
 `RELEASING.md` is the procedure. In short: draft a release on GitHub, dispatch the Release workflow with the draft's tag to attach every package, check them, then publish.
 
-`.github/workflows/packages.yml` is the one place packages are built, and both `ci.yml` and `release.yml` call it. CI builds x86-64 on every push and pull request, installs the RPM on Fedora and the `.deb` on Debian 13, and renders an export from the `.deb` and from the AppImage; a release does the same for both architectures and then attaches the results with a `sha256sums.txt`. A release therefore never attaches something that has not been through CI's steps.
+`.github/workflows/packages.yml` is the one place packages are built, and both `package-check.yml` and `release.yml` call it. The package check builds x86-64, installs the RPM on Fedora and the `.deb` on Debian 13, and renders an export from the `.deb` and from the AppImage; a release does the same for both architectures and then attaches the results with a `sha256sums.txt`. A release therefore never attaches something that has not been through the same steps.
+
+The package check does not run for every change. It runs for a pull request that touches what the packages are made from (the scripts, `packaging/`, the Makefile, the assets, the shell extension, the capture helper, the workflows or any project file) and whenever it is started from the Actions tab, which also works for a branch whose change is only code. Every push and pull request still compiles the whole solution in Release through `ci.yml`. What that does not exercise is the ahead-of-time compile of the client and the overlay, so a code change that only breaks under AOT is found by the next package check or release rather than by its own pull request.
 
 The `.deb` is installed on Debian rather than on the Ubuntu that built it, so a dependency spelled only the way Ubuntu spells it fails there.
 

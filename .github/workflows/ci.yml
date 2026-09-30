@@ -1,14 +1,18 @@
-# Builds every package on every push and pull request, so that a release is never the first thing
-# to discover that a packaging script cannot run from a clean checkout. x86-64 only: arm64 differs
-# in the runner rather than in the scripts, and release.yml builds it.
+# Builds everything on every push and pull request. The packages are built by package-check.yml,
+# and only when a pull request touches something that can break them; a release rebuilds every
+# package from scratch anyway, through the same packages.yml.
+#
+# A change to nothing but Markdown cannot break the build, so it does not start one.
 
 name: CI
 
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md']
   pull_request:
     branches: [main]
+    paths-ignore: ['**.md']
   workflow_dispatch:
 
 permissions:
@@ -26,7 +30,28 @@ jobs:
       - name: Check every packaging script parses
         run: for f in scripts/package/*.sh src/native/snapshotkit-capture/build.sh; do bash -n "$f"; done
 
-  packages:
-    uses: ./.github/workflows/packages.yml
-    with:
-      matrix: '[{"rid": "linux-x64", "runner": "ubuntu-24.04"}]'
+  # The packages used to be the only build CI ran, so once they stopped running for every change
+  # something else had to compile it. Release, because that is where warnings are errors.
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # MinVer needs the tags, or it versions everything 0.0.0.
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install the PipeWire headers for the capture helper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev pkg-config
+
+      - name: Build the capture helper
+        run: src/native/snapshotkit-capture/build.sh
+
+      - name: Build
+        run: dotnet build src/snapshotkit.slnx --configuration Release
