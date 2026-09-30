@@ -104,7 +104,8 @@ public static class WaylandClipboard
     public static bool TryCopyText(string text, out string error) =>
         TryCopy(System.Text.Encoding.UTF8.GetBytes(text), "text/plain;charset=utf-8", out error);
 
-    static bool TryCopy(byte[] content, string type, out string error)
+    /// <summary>Copies bytes offered as <paramref name="type"/>, returning false and a reason rather than throwing.</summary>
+    public static bool TryCopy(byte[] content, string type, out string error)
     {
         try
         {

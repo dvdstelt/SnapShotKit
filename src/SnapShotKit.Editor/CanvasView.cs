@@ -1421,6 +1421,49 @@ public sealed class CanvasView : Decorator
         InvalidateVisual();
     }
 
+    /// <summary>
+    /// Puts down a copy of an object, moved by <paramref name="offset"/> from where the original
+    /// stood, on top of everything and selected.
+    ///
+    /// A marker takes the next number rather than the one it was copied with. Two markers saying 3
+    /// is never what a walkthrough wants, and a marker is copied to be the next step as often as not.
+    /// </summary>
+    public void PasteObject(Annotation annotation, Vector offset)
+    {
+        CommitEdit();
+
+        annotation.Id = Guid.NewGuid().ToString("N")[..12];
+
+        if (annotation is StepAnnotation step)
+        {
+            step.Number = NextStepNumber();
+        }
+
+        if (annotation is ImageAnnotation picture)
+        {
+            (picture.X, picture.Y) = (picture.X + offset.X, picture.Y + offset.Y);
+        }
+        else
+        {
+            PictureLayout.MoveAll([annotation], (point, _) => point + offset);
+        }
+
+        BeforeChange?.Invoke();
+
+        snapshot.Document.Layers.Add(annotation);
+
+        if (annotation is ImageAnnotation)
+        {
+            Refit();
+        }
+
+        Select(annotation);
+        Changed?.Invoke();
+
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
     /// <summary>Where along one side a pasted picture starts. See <see cref="Paste"/>.</summary>
     static double Place(double centre, double extent, double from, double room) => extent <= room
         ? Math.Clamp(Math.Round(centre - extent / 2), from, from + room - extent)

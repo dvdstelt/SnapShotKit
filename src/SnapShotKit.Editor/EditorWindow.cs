@@ -33,6 +33,9 @@ public sealed class EditorWindow : Window
 
     readonly Stack<SnapshotDocument> undo = new();
     readonly Stack<SnapshotDocument> redo = new();
+
+    /// <summary>Which copied object was last pasted here, and how many times, so each paste lands a step further along.</summary>
+    (string Copy, int Times) pasted;
     readonly ThumbnailCache thumbnails = new();
 
     /// <summary>What the editor remembers between sessions, read once as the window opens.</summary>
@@ -522,7 +525,8 @@ public sealed class EditorWindow : Window
             MenuEntry.Item("Undo", "Ctrl+Z", Undo),
             MenuEntry.Item("Redo", "Ctrl+Shift+Z", Redo),
             MenuEntry.Separator,
-            MenuEntry.Item("Paste picture", "Ctrl+V", () => _ = PasteAsync()),
+            MenuEntry.Item("Copy", "Ctrl+C", CopySelected),
+            MenuEntry.Item("Paste", "Ctrl+V", () => _ = PasteAsync()),
             MenuEntry.Item("Delete", "Del", () => canvas?.DeleteSelected()),
             MenuEntry.Item("Deselect", "Esc", () => canvas?.Select(null)),
             MenuEntry.Separator,
@@ -618,7 +622,7 @@ public sealed class EditorWindow : Window
                 MenuEntry.Item("Save as…", "Ctrl+Shift+S", () => _ = SaveAsAsync()),
                 MenuEntry.Separator,
                 MenuEntry.Item("Export…", "Ctrl+E", () => _ = ExportAsync()),
-                MenuEntry.Item("Copy to clipboard", "Ctrl+C", CopyToClipboard),
+                MenuEntry.Item("Copy to clipboard", canvas?.Selected is null ? "Ctrl+C" : null, CopyToClipboard),
                 MenuEntry.Item("Print…", "Ctrl+P", () => _ = PrintAsync()),
                 MenuEntry.Separator
             ]);
@@ -1570,6 +1574,106 @@ public sealed class EditorWindow : Window
     }
 
     /// <summary>
+    /// Copies the selected object, to be pasted back as many times as it is wanted.
+    ///
+    /// The object itself rather than a picture of it, so what is pasted is an arrow that can still
+    /// be bent and recoloured. Nothing else can use that, so another application pasting after this
+    /// finds nothing; Ctrl+C with nothing selected is still how the picture is copied for them.
+    /// </summary>
+    void CopySelected()
+    {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
+        canvas.CommitEdit();
+
+        if (canvas.Selected is not { } selected)
+        {
+            Report("Nothing selected to copy. Select something first, or press Ctrl+C with nothing selected to copy the whole picture.");
+            return;
+        }
+
+        var copied = new ObjectClipboard.Copied
+        {
+            From = snapshot.Path,
+            Annotation = selected.Copy(),
+            Picture = selected is ImageAnnotation picture ? snapshot.PngOf(picture.Source) : null
+        };
+
+        Report(ObjectClipboard.TryCopy(copied, out var error)
+            ? $"Copied the {NameOf(selected)}. Ctrl+V pastes it, as often as you like."
+            : $"Could not copy: {error}");
+    }
+
+    static string NameOf(Annotation annotation) => annotation switch
+    {
+        ArrowAnnotation => "arrow",
+        BoxAnnotation => "box",
+        BlurAnnotation => "blur",
+        SpotlightAnnotation => "spotlight",
+        PenAnnotation => "drawing",
+        MagnifyAnnotation => "lens",
+        TextAnnotation => "text",
+        StepAnnotation => "marker",
+        _ => "picture"
+    };
+
+    /// <summary>
+    /// Pastes a copied object, a step further along each time the same copy is pasted.
+    ///
+    /// Into the snapshot it came from, even the first paste stands clear of the original, since a
+    /// copy exactly on top of what it copied looks like nothing happened. Into another it lands
+    /// where the original stood, which is the one place worth guessing.
+    /// </summary>
+    void PasteObject(ObjectClipboard.Copied copied)
+    {
+        if (snapshot is null || canvas is null)
+        {
+            return;
+        }
+
+        var annotation = copied.Annotation;
+
+        if (annotation is ImageAnnotation picture)
+        {
+            if (copied.Picture is null)
+            {
+                Report("Could not paste: the copied picture came without its pixels.");
+                return;
+            }
+
+            try
+            {
+                picture.Source = snapshot.AddImage(copied.Picture);
+            }
+            catch (Exception exception)
+            {
+                Report($"Could not paste: {exception.Message}");
+                return;
+            }
+
+            // A picture is picked up only by the select tool, and the next thing done with a
+            // pasted one is nearly always moving it.
+            SetTool(EditorTool.Select);
+        }
+
+        pasted = pasted.Copy == copied.Id ? (copied.Id, pasted.Times + 1) : (copied.Id, 1);
+
+        var steps = pasted.Times - (copied.From == snapshot.Path ? 0 : 1);
+
+        // A step that reads the same on screen at any zoom, in whole pixels of the picture.
+        var step = Math.Max(1, Math.Round(PasteStep / canvas.EffectiveScale));
+
+        canvas.PasteObject(annotation, new Vector(step * steps, step * steps));
+        Report($"Pasted the {NameOf(annotation)}");
+    }
+
+    /// <summary>How far along each paste of the same copy lands from the one before, in screen pixels.</summary>
+    const double PasteStep = 16;
+
+    /// <summary>
     /// Whether the file at <paramref name="path"/> is the snapshot on the canvas.
     ///
     /// A blank canvas that has never been saved is no file at all, whatever its path says. The name
@@ -1694,8 +1798,8 @@ public sealed class EditorWindow : Window
     }
 
     /// <summary>
-    /// Pastes the picture on the clipboard onto the canvas, or onto a new blank one when nothing is
-    /// open.
+    /// Pastes what is on the clipboard onto the canvas, or onto a new blank one when nothing is
+    /// open: an object copied out of SnapShotKit as that object, and anything else as a picture.
     ///
     /// The select tool is taken up as it lands, because the picture arrives selected and the next
     /// thing done with a pasted picture is nearly always moving it. With a drawing tool in hand the
@@ -1706,6 +1810,23 @@ public sealed class EditorWindow : Window
         // Asked of the application that copied, which can take its time. What is on the canvas by
         // the time it answers may not be what was there when Ctrl+V was pressed.
         var pastingInto = snapshot;
+
+        if (await ObjectClipboard.ReadAsync() is { } copied)
+        {
+            if (!ReferenceEquals(snapshot, pastingInto))
+            {
+                return;
+            }
+
+            if (snapshot is null && !await NewBlankAsync())
+            {
+                return;
+            }
+
+            PasteObject(copied);
+            return;
+        }
+
         var (png, problem) = await ClipboardPicture.ReadAsync();
 
         if (!ReferenceEquals(snapshot, pastingInto))
@@ -2240,6 +2361,12 @@ public sealed class EditorWindow : Window
 
                 case Key.P:
                     _ = PrintAsync();
+                    return;
+
+                // The selection when there is one, and the whole picture when there is not, which
+                // is what Ctrl+C did before anything could be copied on its own.
+                case Key.C when canvas.Selected is not null:
+                    CopySelected();
                     return;
 
                 case Key.C:
