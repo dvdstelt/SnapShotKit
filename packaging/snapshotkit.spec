@@ -16,7 +16,7 @@ Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Capture a region of the screen and annotate it
 
-License:        LicenseRef-SnapShotKit
+License:        GPL-3.0-or-later
 URL:            https://github.com/dvdstelt/snapshotkit
 Source0:        %{url}/archive/v%{version}/%{forgename}-%{version}.tar.gz
 
